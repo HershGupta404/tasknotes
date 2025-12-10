@@ -51,7 +51,7 @@ class NodeTreeResponse(NodeResponse):
 class LinkCreate(BaseModel):
     source_id: str
     target_id: str
-    link_type: Literal["dependency", "blocks", "reference"] = "reference"
+    link_type: Literal["dependency", "blocks", "reference", "wiki"] = "reference"
 
 
 class LinkResponse(BaseModel):

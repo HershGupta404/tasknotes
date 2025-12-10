@@ -1,8 +1,8 @@
 """SQLAlchemy models for nodes and links."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Integer, Float, DateTime, 
+    Column, String, Text, Integer, Float, DateTime,
     ForeignKey, Boolean, Index
 )
 from sqlalchemy.orm import relationship
@@ -11,6 +11,11 @@ from .database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+
+def utc_now():
+    """Return current UTC time with timezone info."""
+    return datetime.now(timezone.utc)
 
 
 class Node(Base):
@@ -39,8 +44,8 @@ class Node(Base):
     position = Column(Integer, default=0)  # Order within siblings
     
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     # File reference
     md_filename = Column(String(255), unique=True)  # nodes/{uuid}.md
@@ -75,8 +80,8 @@ class NodeLink(Base):
     source_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
     target_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
     link_type = Column(String(50), default="reference")  # 'dependency' | 'blocks' | 'reference'
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    created_at = Column(DateTime, default=utc_now)
     
     # Relationships
     source = relationship("Node", foreign_keys=[source_id], backref="outgoing_links")
@@ -97,7 +102,7 @@ class Attachment(Base):
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)  # Relative to attachments dir
     filetype = Column(String(50))  # 'pdf' | 'image' | 'other'
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    created_at = Column(DateTime, default=utc_now)
     
     node = relationship("Node", backref="attachments")

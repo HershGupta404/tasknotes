@@ -13,7 +13,10 @@ const state = {
         mode: null,
         status: null
     },
-    searchQuery: ''
+    searchQuery: '',
+    currentView: 'tree', // 'tree' or 'page'
+    openTabs: [],  // Array of {id, title, node}
+    activeTab: null
 };
 
 // API Functions
@@ -25,6 +28,17 @@ async function fetchTree() {
 async function fetchNode(id) {
     const res = await fetch(`${API_BASE}/${id}`);
     return res.json();
+}
+
+async function fetchBacklinks(id) {
+    const res = await fetch(`${API_BASE}/${id}/backlinks`);
+    return res.json();
+}
+
+async function findNodeByTitle(title) {
+    const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(title)}`);
+    const results = await res.json();
+    return results.find(n => n.title.toLowerCase() === title.toLowerCase());
 }
 
 async function createNode(data) {
@@ -148,9 +162,9 @@ function renderDueBadge(dueDateStr) {
     return `<span class="node-badge ${className}">${label}</span>`;
 }
 
-function renderDetailPanel(node) {
+async function renderDetailPanel(node) {
     const panel = document.getElementById('detail-panel');
-    
+
     if (!node) {
         panel.innerHTML = `
             <div class="empty-state">
@@ -159,7 +173,13 @@ function renderDetailPanel(node) {
         `;
         return;
     }
-    
+
+    // Fetch backlinks
+    const backlinks = await fetchBacklinks(node.id);
+
+    // Render wiki links in content preview
+    const contentPreview = renderWikiLinks(node.content || 'No content');
+
     panel.innerHTML = `
         <div class="detail-header">
             <div class="mode-toggle">
@@ -167,13 +187,13 @@ function renderDetailPanel(node) {
                 <button class="${node.mode === 'note' ? 'active' : ''}" data-mode="note">Note</button>
             </div>
         </div>
-        
+
         <div class="detail-section">
             <div class="form-group">
                 <label>Title</label>
                 <input type="text" id="detail-title" value="${escapeHtml(node.title)}">
             </div>
-            
+
             ${node.mode === 'task' ? `
                 <div class="form-row">
                     <div class="form-group">
@@ -202,12 +222,34 @@ function renderDetailPanel(node) {
                 </div>
             ` : ''}
         </div>
-        
+
         <div class="detail-section">
             <h3>Content (Markdown)</h3>
-            <textarea id="detail-content" placeholder="Add notes, details, or markdown content...">${escapeHtml(node.content || '')}</textarea>
+            <textarea id="detail-content" placeholder="Add notes, details, or markdown content... Use [[Page Name]] to link to other notes">${escapeHtml(node.content || '')}</textarea>
+            <div style="margin-top: 8px; padding: 8px; background: var(--bg-primary); border-radius: 6px;">
+                <small style="color: var(--text-secondary);">Preview:</small>
+                <div class="content-renderer">${contentPreview}</div>
+            </div>
         </div>
-        
+
+        ${backlinks.length > 0 ? `
+        <div class="detail-section">
+            <h3>Backlinks (${backlinks.length})</h3>
+            <div class="backlinks-section">
+                <ul class="backlinks-list">
+                    ${backlinks.map(bl => `
+                        <li data-node-id="${bl.id}">
+                            ${escapeHtml(bl.title)}
+                            <small style="color: var(--text-secondary); display: block; margin-top: 2px;">
+                                ${bl.mode === 'task' ? '📋 Task' : '📝 Note'}
+                            </small>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        </div>
+        ` : ''}
+
         <div class="detail-section">
             <h3>Info</h3>
             <div style="font-size: 0.85rem; color: var(--text-secondary);">
@@ -216,15 +258,39 @@ function renderDetailPanel(node) {
                 <p>Priority Score: ${node.computed_priority?.toFixed(1) || 'N/A'}</p>
             </div>
         </div>
-        
+
         <div class="modal-actions">
             <button class="btn btn-ghost" id="delete-node-btn">Delete</button>
             <button class="btn btn-primary" id="save-node-btn">Save</button>
         </div>
     `;
-    
+
     // Add event listeners
     setupDetailPanelListeners(node);
+
+    // Add backlink click handlers
+    document.querySelectorAll('.backlinks-list li').forEach(item => {
+        item.addEventListener('click', async () => {
+            const nodeId = item.dataset.nodeId;
+            state.selectedNode = await fetchNode(nodeId);
+            refreshTree();
+            await renderDetailPanel(state.selectedNode);
+        });
+    });
+
+    // Add wiki link click handlers
+    document.querySelectorAll('.wiki-link').forEach(link => {
+        link.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const title = link.dataset.page;
+            const targetNode = await findNodeByTitle(title);
+            if (targetNode) {
+                state.selectedNode = await fetchNode(targetNode.id);
+                refreshTree();
+                await renderDetailPanel(state.selectedNode);
+            }
+        });
+    });
 }
 
 function setupDetailPanelListeners(node) {
@@ -292,14 +358,220 @@ function updateFilterUI() {
     });
 }
 
+// Page View Functions
+function switchView(viewName) {
+    state.currentView = viewName;
+
+    // Update view buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === viewName);
+    });
+
+    // Toggle view containers
+    document.getElementById('tree-view').style.display = viewName === 'tree' ? 'block' : 'none';
+    document.getElementById('page-view').style.display = viewName === 'page' ? 'block' : 'none';
+}
+
+function openInPageView(node) {
+    // Check if tab already exists
+    const existingTab = state.openTabs.find(tab => tab.id === node.id);
+    if (existingTab) {
+        state.activeTab = existingTab.id;
+        renderPageView();
+        return;
+    }
+
+    // Add new tab
+    state.openTabs.push({
+        id: node.id,
+        title: node.title,
+        node: node
+    });
+    state.activeTab = node.id;
+
+    // Switch to page view
+    switchView('page');
+    renderPageView();
+}
+
+function closeTab(tabId) {
+    const index = state.openTabs.findIndex(tab => tab.id === tabId);
+    if (index === -1) return;
+
+    state.openTabs.splice(index, 1);
+
+    // If closed active tab, switch to another or none
+    if (state.activeTab === tabId) {
+        state.activeTab = state.openTabs.length > 0 ? state.openTabs[0].id : null;
+    }
+
+    renderPageView();
+}
+
+async function renderPageView() {
+    const tabsList = document.getElementById('tabs-list');
+    const pageContent = document.getElementById('page-content');
+
+    // Render tabs
+    tabsList.innerHTML = state.openTabs.map(tab => `
+        <div class="page-tab ${tab.id === state.activeTab ? 'active' : ''}" data-tab-id="${tab.id}">
+            <span>${escapeHtml(tab.title)}</span>
+            <button class="page-tab-close" onclick="event.stopPropagation(); closeTab('${tab.id}')">×</button>
+        </div>
+    `).join('');
+
+    // Add tab click handlers
+    document.querySelectorAll('.page-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            state.activeTab = tab.dataset.tabId;
+            renderPageView();
+        });
+    });
+
+    // Render active page content
+    if (state.activeTab) {
+        const tab = state.openTabs.find(t => t.id === state.activeTab);
+        if (tab) {
+            // Fetch latest node data
+            const node = await fetchNode(tab.id);
+            tab.node = node;
+
+            const backlinks = await fetchBacklinks(node.id);
+            const contentPreview = renderWikiLinks(node.content || '');
+
+            pageContent.innerHTML = `
+                <div class="page-editor">
+                    <input type="text" class="page-title-input" id="page-title" value="${escapeHtml(node.title)}" placeholder="Page title...">
+
+                    <div class="page-metadata">
+                        <div class="page-metadata-item">
+                            <span>📝</span>
+                            <select id="page-mode" class="btn-ghost" style="padding: 4px 8px;">
+                                <option value="note" ${node.mode === 'note' ? 'selected' : ''}>Note</option>
+                                <option value="task" ${node.mode === 'task' ? 'selected' : ''}>Task</option>
+                            </select>
+                        </div>
+                        ${node.mode === 'task' ? `
+                        <div class="page-metadata-item">
+                            <span>📊</span>
+                            <select id="page-status" style="padding: 4px 8px;">
+                                <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
+                                <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                                <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
+                            </select>
+                        </div>
+                        <div class="page-metadata-item">
+                            <span>🔥</span>
+                            <select id="page-priority" style="padding: 4px 8px;">
+                                <option value="1" ${node.priority === 1 ? 'selected' : ''}>Urgent</option>
+                                <option value="2" ${node.priority === 2 ? 'selected' : ''}>High</option>
+                                <option value="3" ${node.priority === 3 ? 'selected' : ''}>Medium</option>
+                                <option value="4" ${node.priority === 4 ? 'selected' : ''}>Low</option>
+                                <option value="5" ${node.priority === 5 ? 'selected' : ''}>Someday</option>
+                            </select>
+                        </div>
+                        ` : ''}
+                        <div class="page-metadata-item">
+                            <button class="btn btn-primary btn-sm" id="save-page-btn">💾 Save</button>
+                        </div>
+                    </div>
+
+                    <textarea class="page-content-editor" id="page-content-text" placeholder="Start writing... Use [[Page Name]] to link to other pages">${escapeHtml(node.content || '')}</textarea>
+
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
+                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px;">PREVIEW</h3>
+                        <div class="content-renderer">${contentPreview}</div>
+                    </div>
+
+                    ${backlinks.length > 0 ? `
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
+                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px;">BACKLINKS (${backlinks.length})</h3>
+                        <div class="backlinks-section">
+                            <ul class="backlinks-list">
+                                ${backlinks.map(bl => `
+                                    <li data-node-id="${bl.id}">
+                                        ${escapeHtml(bl.title)}
+                                        <small style="color: var(--text-secondary); display: block; margin-top: 2px;">
+                                            ${bl.mode === 'task' ? '📋 Task' : '📝 Note'}
+                                        </small>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+
+            // Setup save handler
+            document.getElementById('save-page-btn')?.addEventListener('click', async () => {
+                const updates = {
+                    title: document.getElementById('page-title').value,
+                    content: document.getElementById('page-content-text').value,
+                    mode: document.getElementById('page-mode').value
+                };
+
+                if (node.mode === 'task') {
+                    updates.status = document.getElementById('page-status')?.value;
+                    updates.priority = parseInt(document.getElementById('page-priority')?.value);
+                }
+
+                await updateNode(node.id, updates);
+                tab.title = updates.title;
+                await renderPageView();
+                await refreshTree();
+            });
+
+            // Setup backlink handlers
+            document.querySelectorAll('.backlinks-list li').forEach(item => {
+                item.addEventListener('click', async () => {
+                    const backNode = await fetchNode(item.dataset.nodeId);
+                    openInPageView(backNode);
+                });
+            });
+
+            // Setup wiki link handlers
+            document.querySelectorAll('.wiki-link').forEach(link => {
+                link.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const title = link.dataset.page;
+                    const targetNode = await findNodeByTitle(title);
+                    if (targetNode) {
+                        const fullNode = await fetchNode(targetNode.id);
+                        openInPageView(fullNode);
+                    }
+                });
+            });
+        }
+    } else {
+        pageContent.innerHTML = `
+            <div class="empty-state">
+                <h3>No page open</h3>
+                <p>Select a node from the tree or create a new page</p>
+            </div>
+        `;
+    }
+}
+
+function openNewPage() {
+    showCreateModal('note');
+}
+
 // Event handlers
 function setupEventListeners() {
+    // View toggle
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchView(btn.dataset.view);
+        });
+    });
+
     // Quick add
     document.getElementById('quick-add-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = document.getElementById('quick-add-input');
         const title = input.value.trim();
-        
+
         if (title) {
             await createNode({ title, mode: 'task' });
             input.value = '';
@@ -361,8 +633,14 @@ function setupEventListeners() {
         if (nodeItem) {
             const id = nodeItem.dataset.id;
             state.selectedNode = await fetchNode(id);
-            refreshTree();
-            renderDetailPanel(state.selectedNode);
+
+            // If ctrl/cmd key is pressed, open in page view
+            if (e.ctrlKey || e.metaKey) {
+                openInPageView(state.selectedNode);
+            } else {
+                refreshTree();
+                renderDetailPanel(state.selectedNode);
+            }
         }
     });
 }
@@ -387,6 +665,18 @@ function debounce(fn, delay) {
     };
 }
 
+function renderWikiLinks(content) {
+    // Convert [[Page Name]] to clickable links
+    const pattern = /\[\[([^\]]+)\]\]/g;
+    let html = escapeHtml(content);
+    html = html.replace(pattern, (match, title) => {
+        return `<a href="#" class="wiki-link" data-page="${escapeHtml(title)}">[[${escapeHtml(title)}]]</a>`;
+    });
+    // Convert line breaks to paragraphs
+    html = html.split('\n\n').map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`).join('');
+    return html;
+}
+
 // Refresh functions
 async function refreshTree() {
     const tree = await fetchTree();
@@ -399,7 +689,7 @@ async function refreshAll() {
     if (state.selectedNode) {
         state.selectedNode = await fetchNode(state.selectedNode.id).catch(() => null);
     }
-    renderDetailPanel(state.selectedNode);
+    await renderDetailPanel(state.selectedNode);
 }
 
 // Initialize

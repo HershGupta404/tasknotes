@@ -7,6 +7,7 @@ from ..models import Node, NodeLink
 from ..schemas import NodeCreate, NodeUpdate, FilterParams
 from .sync_service import save_node_to_file
 from .priority_service import propagate_node_changes, compute_node_priority
+from .link_parser import sync_wiki_links, get_backlinks
 
 
 def get_node(db: Session, node_id: str) -> Optional[Node]:
@@ -108,10 +109,13 @@ def create_node(db: Session, node_data: NodeCreate) -> Node:
     
     # Save to markdown file
     save_node_to_file(node)
-    
+
+    # Sync wiki links from content
+    sync_wiki_links(db, node)
+
     # Propagate changes
     propagate_node_changes(db, node)
-    
+
     return node
 
 
@@ -128,11 +132,15 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     
     db.commit()
     db.refresh(node)
-    
+
+    # Sync wiki links if content changed
+    if 'content' in update_data:
+        sync_wiki_links(db, node)
+
     # Propagate and save
     propagate_node_changes(db, node)
     save_node_to_file(node)
-    
+
     return node
 
 

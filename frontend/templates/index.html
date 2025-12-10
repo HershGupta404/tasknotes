@@ -50,16 +50,42 @@
         
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Quick Add -->
-            <form class="quick-add" id="quick-add-form">
-                <input type="text" id="quick-add-input" placeholder="Quick add task... (press Enter)">
-                <button type="submit" class="btn btn-primary">Add</button>
-            </form>
-            
+            <!-- View Toggle -->
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="tree">🌲 Tree View</button>
+                <button class="view-btn" data-view="page">📄 Page View</button>
+            </div>
+
             <!-- Tree View -->
-            <div id="tree-container" class="tree-container">
-                <div class="loading">
-                    <div class="spinner"></div>
+            <div id="tree-view" class="view-container">
+                <!-- Quick Add -->
+                <form class="quick-add" id="quick-add-form">
+                    <input type="text" id="quick-add-input" placeholder="Quick add task... (press Enter)">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </form>
+
+                <!-- Tree Container -->
+                <div id="tree-container" class="tree-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page View -->
+            <div id="page-view" class="view-container" style="display: none;">
+                <div class="page-tabs">
+                    <div class="tabs-list" id="tabs-list">
+                        <!-- Tabs will be added dynamically -->
+                    </div>
+                    <button class="btn-icon" onclick="openNewPage()">+</button>
+                </div>
+
+                <div class="page-content" id="page-content">
+                    <div class="empty-state">
+                        <h3>No page open</h3>
+                        <p>Select a node or create a new page</p>
+                    </div>
                 </div>
             </div>
         </main>

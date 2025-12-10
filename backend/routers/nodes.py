@@ -139,6 +139,16 @@ def get_node_links(node_id: str, db: Session = Depends(get_db)):
     return links
 
 
+@router.get("/{node_id}/backlinks", response_model=List[NodeResponse])
+def get_backlinks(node_id: str, db: Session = Depends(get_db)):
+    """Get all nodes that link to this node via wiki links."""
+    from ..services.link_parser import get_backlinks
+    backlinks = get_backlinks(db, node_id)
+    for node in backlinks:
+        node.children_count = len(node.children) if node.children else 0
+    return backlinks
+
+
 @router.post("/links", response_model=LinkResponse)
 def create_link(link: LinkCreate, db: Session = Depends(get_db)):
     """Create a link between nodes."""
