@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskNotes</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📋 TaskNotes</h1>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span id="sync-status" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
+                <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↻ Refresh</button>
+            </div>
+        </header>
+        
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Search -->
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="Search tasks and notes...">
+            </div>
+            
+            <!-- Filters -->
+            <div class="filters">
+                <span class="filter-chip" data-filter-type="mode" data-filter-value="task">Tasks</span>
+                <span class="filter-chip" data-filter-type="mode" data-filter-value="note">Notes</span>
+            </div>
+            <div class="filters">
+                <span class="filter-chip" data-filter-type="status" data-filter-value="todo">To Do</span>
+                <span class="filter-chip" data-filter-type="status" data-filter-value="in_progress">In Progress</span>
+                <span class="filter-chip" data-filter-type="status" data-filter-value="done">Done</span>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
+                <h3 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">QUICK ACTIONS</h3>
+                <button class="btn btn-ghost" style="width: 100%; margin-bottom: 8px;" onclick="showCreateModal('task')">
+                    + New Task
+                </button>
+                <button class="btn btn-ghost" style="width: 100%;" onclick="showCreateModal('note')">
+                    + New Note
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Quick Add -->
+            <form class="quick-add" id="quick-add-form">
+                <input type="text" id="quick-add-input" placeholder="Quick add task... (press Enter)">
+                <button type="submit" class="btn btn-primary">Add</button>
+            </form>
+            
+            <!-- Tree View -->
+            <div id="tree-container" class="tree-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Detail Panel -->
+        <aside class="detail-panel" id="detail-panel">
+            <div class="empty-state">
+                <p>Select a task or note to view details</p>
+            </div>
+        </aside>
+    </div>
+    
+    <!-- Create Modal -->
+    <div id="create-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Create Task</h2>
+                <button class="btn-icon" onclick="hideCreateModal()">✕</button>
+            </div>
+            
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="create-title" required>
+                </div>
+                
+                <div id="task-fields">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Priority</label>
+                            <select id="create-priority">
+                                <option value="1">🔴 Urgent</option>
+                                <option value="2">🟠 High</option>
+                                <option value="3" selected>🟡 Medium</option>
+                                <option value="4">🟢 Low</option>
+                                <option value="5">⚪ Someday</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Due Date</label>
+                            <input type="datetime-local" id="create-due">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Content (Markdown)</label>
+                    <textarea id="create-content" placeholder="Add notes or details..."></textarea>
+                </div>
+                
+                <input type="hidden" id="create-mode" value="task">
+                <input type="hidden" id="create-parent" value="">
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="hideCreateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+    <script>
+        // Modal functions
+        function showCreateModal(mode, parentId = null) {
+            document.getElementById('create-modal').style.display = 'flex';
+            document.getElementById('modal-title').textContent = mode === 'task' ? 'Create Task' : 'Create Note';
+            document.getElementById('create-mode').value = mode;
+            document.getElementById('create-parent').value = parentId || '';
+            document.getElementById('task-fields').style.display = mode === 'task' ? 'block' : 'none';
+            document.getElementById('create-title').focus();
+        }
+        
+        function hideCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+        
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                title: document.getElementById('create-title').value,
+                mode: document.getElementById('create-mode').value,
+                content: document.getElementById('create-content').value,
+                parent_id: document.getElementById('create-parent').value || null
+            };
+            
+            if (data.mode === 'task') {
+                data.priority = parseInt(document.getElementById('create-priority').value);
+                const dueValue = document.getElementById('create-due').value;
+                if (dueValue) {
+                    data.due_date = new Date(dueValue).toISOString();
+                }
+            }
+            
+            await createNode(data);
+            hideCreateModal();
+            await refreshAll();
+        });
+        
+        // Close modal on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideCreateModal();
+        });
+        
+        // Close modal on backdrop click
+        document.getElementById('create-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) hideCreateModal();
+        });
+    </script>
+</body>
+</html>
