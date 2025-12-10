@@ -68,6 +68,29 @@ async function searchNodes(query) {
     return res.json();
 }
 
+async function autocompleteNodes(query) {
+    const res = await fetch(`${API_BASE}/autocomplete?q=${encodeURIComponent(query)}`);
+    return res.json();
+}
+
+async function fetchDependencies(id) {
+    const res = await fetch(`${API_BASE}/${id}/dependencies`);
+    return res.json();
+}
+
+async function createDependencyLink(sourceId, targetId) {
+    const res = await fetch(`${API_BASE}/links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            source_id: sourceId,
+            target_id: targetId,
+            link_type: 'dependency'
+        })
+    });
+    return res.json();
+}
+
 // Render Functions
 function renderTree(nodes, container) {
     container.innerHTML = '';
@@ -174,8 +197,11 @@ async function renderDetailPanel(node) {
         return;
     }
 
-    // Fetch backlinks
+    // Fetch all metadata
     const backlinks = await fetchBacklinks(node.id);
+    const dependencies = node.mode === 'task' ? await fetchDependencies(node.id) : null;
+    const parentNode = node.parent_id ? await fetchNode(node.parent_id) : null;
+    const subtasks = node.children && node.children.length > 0 ? node.children : [];
 
     // Render wiki links in content preview
     const contentPreview = renderWikiLinks(node.content || 'No content');
@@ -187,6 +213,20 @@ async function renderDetailPanel(node) {
                 <button class="${node.mode === 'note' ? 'active' : ''}" data-mode="note">Note</button>
             </div>
         </div>
+
+        ${parentNode ? `
+        <div class="detail-section" style="background: var(--bg-primary); padding: 12px; border-radius: 6px;">
+            <h3 style="margin-bottom: 8px;">📍 Parent Task</h3>
+            <div class="parent-task-info" data-node-id="${parentNode.id}" style="cursor: pointer; padding: 8px; background: var(--bg-secondary); border-radius: 4px;">
+                <div style="font-weight: 500;">${escapeHtml(parentNode.title)}</div>
+                <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 0.85rem;">
+                    <span class="node-badge badge-${parentNode.status}">${parentNode.status}</span>
+                    <span style="color: var(--text-secondary);">Priority: ${parentNode.priority}</span>
+                    ${parentNode.due_date ? renderDueBadge(parentNode.due_date) : ''}
+                </div>
+            </div>
+        </div>
+        ` : ''}
 
         <div class="detail-section">
             <div class="form-group">
@@ -222,6 +262,80 @@ async function renderDetailPanel(node) {
                 </div>
             ` : ''}
         </div>
+
+        ${subtasks.length > 0 ? `
+        <div class="detail-section">
+            <h3>📋 Subtasks (${subtasks.length})</h3>
+            <div class="subtasks-list">
+                ${subtasks.map(subtask => `
+                    <div class="subtask-item" data-node-id="${subtask.id}" style="padding: 10px; background: var(--bg-primary); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="node-checkbox ${subtask.status === 'done' ? 'checked' : ''}" style="flex-shrink: 0;">
+                                ${subtask.status === 'done' ? '✓' : ''}
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 500; ${subtask.status === 'done' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${escapeHtml(subtask.title)}</div>
+                                <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 0.85rem;">
+                                    <span class="node-badge badge-${subtask.status}">${subtask.status}</span>
+                                    <span style="color: var(--text-secondary);">P${subtask.priority}</span>
+                                    ${subtask.due_date ? renderDueBadge(subtask.due_date) : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <button class="btn btn-ghost btn-sm" style="width: 100%; margin-top: 8px;" onclick="showCreateModal('task', '${node.id}')">+ Add Subtask</button>
+        </div>
+        ` : (node.mode === 'task' ? `
+        <div class="detail-section">
+            <button class="btn btn-ghost btn-sm" style="width: 100%;" onclick="showCreateModal('task', '${node.id}')">+ Add Subtask</button>
+        </div>
+        ` : '')}
+
+        ${dependencies && (dependencies.blocking.length > 0 || dependencies.blocked_by.length > 0) ? `
+        <div class="detail-section">
+            <h3>🔗 Dependencies</h3>
+            ${dependencies.blocking.length > 0 ? `
+            <div style="margin-bottom: 12px;">
+                <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px;">Blocked By (must complete first):</h4>
+                <div class="dependencies-list">
+                    ${dependencies.blocking.map(dep => `
+                        <div class="dependency-item" data-node-id="${dep.id}" style="padding: 8px; background: var(--bg-primary); border-radius: 4px; margin-bottom: 4px; cursor: pointer; border-left: 3px solid var(--warning);">
+                            <div style="font-weight: 500;">${escapeHtml(dep.title)}</div>
+                            <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 0.85rem;">
+                                <span class="node-badge badge-${dep.status}">${dep.status}</span>
+                                <span style="color: var(--text-secondary);">P${dep.priority}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            ${dependencies.blocked_by.length > 0 ? `
+            <div>
+                <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px;">Blocking (waiting for this):</h4>
+                <div class="dependencies-list">
+                    ${dependencies.blocked_by.map(dep => `
+                        <div class="dependency-item" data-node-id="${dep.id}" style="padding: 8px; background: var(--bg-primary); border-radius: 4px; margin-bottom: 4px; cursor: pointer; border-left: 3px solid var(--accent);">
+                            <div style="font-weight: 500;">${escapeHtml(dep.title)}</div>
+                            <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 0.85rem;">
+                                <span class="node-badge badge-${dep.status}">${dep.status}</span>
+                                <span style="color: var(--text-secondary);">P${dep.priority}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            <button class="btn btn-ghost btn-sm" style="width: 100%; margin-top: 8px;" id="add-dependency-btn">+ Add Dependency</button>
+        </div>
+        ` : (node.mode === 'task' ? `
+        <div class="detail-section">
+            <h3>🔗 Dependencies</h3>
+            <button class="btn btn-ghost btn-sm" style="width: 100%;" id="add-dependency-btn">+ Add Dependency</button>
+        </div>
+        ` : '')}
 
         <div class="detail-section">
             <h3>Content (Markdown)</h3>
@@ -290,6 +404,48 @@ async function renderDetailPanel(node) {
                 await renderDetailPanel(state.selectedNode);
             }
         });
+    });
+
+    // Parent task click handler
+    document.querySelector('.parent-task-info')?.addEventListener('click', async () => {
+        const parentId = document.querySelector('.parent-task-info').dataset.nodeId;
+        state.selectedNode = await fetchNode(parentId);
+        refreshTree();
+        await renderDetailPanel(state.selectedNode);
+    });
+
+    // Subtask click handlers
+    document.querySelectorAll('.subtask-item').forEach(item => {
+        item.addEventListener('click', async () => {
+            const subtaskId = item.dataset.nodeId;
+            state.selectedNode = await fetchNode(subtaskId);
+            refreshTree();
+            await renderDetailPanel(state.selectedNode);
+        });
+    });
+
+    // Dependency click handlers
+    document.querySelectorAll('.dependency-item').forEach(item => {
+        item.addEventListener('click', async () => {
+            const depId = item.dataset.nodeId;
+            state.selectedNode = await fetchNode(depId);
+            refreshTree();
+            await renderDetailPanel(state.selectedNode);
+        });
+    });
+
+    // Add dependency button
+    document.getElementById('add-dependency-btn')?.addEventListener('click', async () => {
+        const targetTitle = prompt('Enter the title of the task that blocks this task:');
+        if (targetTitle) {
+            const targetNode = await findNodeByTitle(targetTitle);
+            if (targetNode) {
+                await createDependencyLink(node.id, targetNode.id);
+                await renderDetailPanel(node);
+            } else {
+                alert('Task not found. Please enter an exact title.');
+            }
+        }
     });
 }
 

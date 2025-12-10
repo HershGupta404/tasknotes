@@ -54,10 +54,27 @@ def get_tree(db: Session = Depends(get_db)):
 def search_nodes(
     q: str,
     mode: Optional[str] = None,
+    limit: int = Query(20, le=100),
     db: Session = Depends(get_db)
 ):
     """Search nodes by title and content."""
-    return node_service.search_nodes(db, q, mode)
+    results = node_service.search_nodes(db, q, mode)
+    # Limit results for autocomplete
+    return results[:limit]
+
+
+@router.get("/autocomplete")
+def autocomplete_nodes(
+    q: str,
+    limit: int = Query(10, le=50),
+    db: Session = Depends(get_db)
+):
+    """Fast autocomplete for node titles (for wiki link suggestions)."""
+    from ..models import Node
+    results = db.query(Node).filter(
+        Node.title.ilike(f"%{q}%")
+    ).limit(limit).all()
+    return [{"id": n.id, "title": n.title, "mode": n.mode} for n in results]
 
 
 @router.get("/{node_id}", response_model=NodeResponse)
@@ -147,6 +164,32 @@ def get_backlinks(node_id: str, db: Session = Depends(get_db)):
     for node in backlinks:
         node.children_count = len(node.children) if node.children else 0
     return backlinks
+
+
+@router.get("/{node_id}/dependencies")
+def get_dependencies(node_id: str, db: Session = Depends(get_db)):
+    """Get dependencies for a node (tasks that block this task and tasks blocked by this task)."""
+    from ..models import NodeLink
+
+    # Tasks this node depends on (blocking tasks)
+    blocking = db.query(NodeLink).filter(
+        NodeLink.source_id == node_id,
+        NodeLink.link_type == "dependency"
+    ).all()
+
+    # Tasks that depend on this node (blocked tasks)
+    blocked = db.query(NodeLink).filter(
+        NodeLink.target_id == node_id,
+        NodeLink.link_type == "dependency"
+    ).all()
+
+    blocking_nodes = [node_service.get_node(db, link.target_id) for link in blocking]
+    blocked_nodes = [node_service.get_node(db, link.source_id) for link in blocked]
+
+    return {
+        "blocking": [{"id": n.id, "title": n.title, "status": n.status, "priority": n.priority} for n in blocking_nodes if n],
+        "blocked_by": [{"id": n.id, "title": n.title, "status": n.status, "priority": n.priority} for n in blocked_nodes if n]
+    }
 
 
 @router.post("/links", response_model=LinkResponse)

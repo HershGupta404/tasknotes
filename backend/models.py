@@ -55,8 +55,8 @@ class Node(Base):
     children = relationship(
         "Node",
         backref="parent",
-        remote_side="Node.id",
-        foreign_keys="Node.parent_id",
+        remote_side=[id],
+        foreign_keys=[parent_id],
         lazy="selectin"
     )
     
