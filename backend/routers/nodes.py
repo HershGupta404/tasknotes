@@ -26,6 +26,7 @@ def list_nodes(
     db: Session = Depends(get_db)
 ):
     """List nodes with optional filtering."""
+    from ..models import Node
     filters = FilterParams(
         mode=mode,
         status=status,
@@ -36,11 +37,11 @@ def list_nodes(
         sort_desc=sort_desc
     )
     nodes = node_service.get_nodes(db, filters)
-    
+
     # Add children count
     for node in nodes:
-        node.children_count = len(node.children) if node.children else 0
-    
+        node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
+
     return nodes
 
 
@@ -83,34 +84,38 @@ def get_node(node_id: str, db: Session = Depends(get_db)):
     node = node_service.get_node(db, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-    node.children_count = len(node.children) if node.children else 0
+    # Count children using query
+    node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
     return node
 
 
 @router.get("/{node_id}/children", response_model=List[NodeResponse])
 def get_children(node_id: str, db: Session = Depends(get_db)):
     """Get children of a node."""
+    from ..models import Node
     children = node_service.get_children(db, node_id)
     for child in children:
-        child.children_count = len(child.children) if child.children else 0
+        child.children_count = db.query(Node).filter(Node.parent_id == child.id).count()
     return children
 
 
 @router.post("/", response_model=NodeResponse)
 def create_node(node: NodeCreate, db: Session = Depends(get_db)):
     """Create a new node."""
+    from ..models import Node
     created = node_service.create_node(db, node)
-    created.children_count = 0
+    created.children_count = db.query(Node).filter(Node.parent_id == created.id).count()
     return created
 
 
 @router.patch("/{node_id}", response_model=NodeResponse)
 def update_node(node_id: str, updates: NodeUpdate, db: Session = Depends(get_db)):
     """Update a node."""
+    from ..models import Node
     node = node_service.update_node(db, node_id, updates)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-    node.children_count = len(node.children) if node.children else 0
+    node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
     return node
 
 
@@ -160,9 +165,10 @@ def get_node_links(node_id: str, db: Session = Depends(get_db)):
 def get_backlinks(node_id: str, db: Session = Depends(get_db)):
     """Get all nodes that link to this node via wiki links."""
     from ..services.link_parser import get_backlinks
+    from ..models import Node
     backlinks = get_backlinks(db, node_id)
     for node in backlinks:
-        node.children_count = len(node.children) if node.children else 0
+        node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
     return backlinks
 
 
