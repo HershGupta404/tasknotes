@@ -1,5 +1,5 @@
 """Priority and due date propagation service."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,8 +14,16 @@ def calculate_urgency_score(due_date: Optional[datetime], now: Optional[datetime
     """
     if not due_date:
         return 0.0
-    
-    now = now or datetime.utcnow()
+
+    # Ensure both datetimes are timezone-aware for comparison
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if due_date.tzinfo is None:
+        due_date = due_date.replace(tzinfo=timezone.utc)
+
     days_until = (due_date - now).days
     
     if days_until < 0:  # Overdue
