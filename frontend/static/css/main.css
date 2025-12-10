@@ -310,6 +310,26 @@ textarea {
     color: var(--priority-1);
 }
 
+.badge-todo {
+    background: rgba(160, 160, 160, 0.2);
+    color: var(--text-secondary);
+}
+
+.badge-in_progress {
+    background: rgba(251, 191, 36, 0.2);
+    color: var(--warning);
+}
+
+.badge-done {
+    background: rgba(74, 222, 128, 0.2);
+    color: var(--success);
+}
+
+.badge-cancelled {
+    background: rgba(107, 114, 128, 0.2);
+    color: var(--text-secondary);
+}
+
 /* Priority indicators */
 .priority-dot {
     width: 8px;
