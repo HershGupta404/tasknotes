@@ -16,7 +16,13 @@ const state = {
     searchQuery: '',
     currentView: 'tree', // 'tree' or 'page'
     openTabs: [],  // Array of {id, title, node}
-    activeTab: null
+    activeTab: null,
+    commandPalette: {
+        isOpen: false,
+        element: null,
+        selectedIndex: 0,
+        commands: []
+    }
 };
 
 // API Functions
@@ -457,25 +463,25 @@ function setupDetailPanelListeners(node) {
             await refreshAll();
         });
     });
-    
+
     // Save button
     document.getElementById('save-node-btn')?.addEventListener('click', async () => {
         const updates = {
             title: document.getElementById('detail-title').value,
             content: document.getElementById('detail-content').value
         };
-        
+
         if (node.mode === 'task') {
             updates.status = document.getElementById('detail-status').value;
             updates.priority = parseInt(document.getElementById('detail-priority').value);
             const dueValue = document.getElementById('detail-due').value;
             updates.due_date = dueValue ? new Date(dueValue).toISOString() : null;
         }
-        
+
         await updateNode(node.id, updates);
         await refreshAll();
     });
-    
+
     // Delete button
     document.getElementById('delete-node-btn')?.addEventListener('click', async () => {
         if (confirm('Delete this item and all its children?')) {
@@ -484,6 +490,40 @@ function setupDetailPanelListeners(node) {
             await refreshAll();
         }
     });
+
+    // Command palette trigger on detail-content textarea
+    const contentTextarea = document.getElementById('detail-content');
+    if (contentTextarea) {
+        contentTextarea.addEventListener('keydown', (e) => {
+            if (e.key === '/' && contentTextarea.selectionStart === contentTextarea.value.length) {
+                // Only trigger if cursor is at the end or on a new line
+                const beforeCursor = contentTextarea.value.substring(0, contentTextarea.selectionStart);
+                const lastChar = beforeCursor[beforeCursor.length - 1];
+
+                if (!lastChar || lastChar === '\n' || lastChar === ' ') {
+                    e.preventDefault();
+                    showCommandPalette(contentTextarea);
+                }
+            }
+
+            // Command palette navigation
+            if (state.commandPalette.isOpen) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    navigateCommandPalette('down');
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    navigateCommandPalette('up');
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    executeCommand();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    hideCommandPalette();
+                }
+            }
+        });
+    }
 }
 
 // Filter functions
@@ -713,6 +753,209 @@ function openNewPage() {
     showCreateModal('note');
 }
 
+// Inline Command Palette Functions
+function showCommandPalette(inputElement) {
+    if (state.commandPalette.isOpen) return;
+
+    const parentNode = state.selectedNode;
+
+    // Define available commands
+    state.commandPalette.commands = [
+        {
+            id: 'task',
+            icon: '✓',
+            title: 'Add Subtask',
+            description: 'Create a new subtask inline',
+            action: () => showInlineTaskInput(parentNode)
+        },
+        {
+            id: 'note',
+            icon: '📝',
+            title: 'Add Note',
+            description: 'Create a new note',
+            action: () => showCreateModal('note', parentNode?.id)
+        }
+    ];
+
+    // Only show subtask option if we have a selected task
+    if (!parentNode || parentNode.mode !== 'task') {
+        state.commandPalette.commands = state.commandPalette.commands.filter(c => c.id !== 'task');
+    }
+
+    // Create palette element
+    const palette = document.createElement('div');
+    palette.className = 'inline-command-palette';
+    palette.id = 'command-palette';
+
+    // Position near cursor/input
+    const rect = inputElement.getBoundingClientRect();
+    palette.style.left = `${rect.left}px`;
+    palette.style.top = `${rect.bottom + 5}px`;
+
+    palette.innerHTML = `
+        <div class="command-palette-list">
+            ${state.commandPalette.commands.map((cmd, index) => `
+                <div class="command-palette-item ${index === 0 ? 'selected' : ''}" data-index="${index}">
+                    <span class="command-palette-item-icon">${cmd.icon}</span>
+                    <div class="command-palette-item-content">
+                        <div class="command-palette-item-title">${cmd.title}</div>
+                        <div class="command-palette-item-description">${cmd.description}</div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    document.body.appendChild(palette);
+    state.commandPalette.isOpen = true;
+    state.commandPalette.element = palette;
+    state.commandPalette.selectedIndex = 0;
+
+    // Add click handlers
+    palette.querySelectorAll('.command-palette-item').forEach((item, index) => {
+        item.addEventListener('click', () => {
+            executeCommand(index);
+        });
+        item.addEventListener('mouseenter', () => {
+            selectCommandItem(index);
+        });
+    });
+}
+
+function hideCommandPalette() {
+    if (state.commandPalette.element) {
+        state.commandPalette.element.remove();
+        state.commandPalette.element = null;
+        state.commandPalette.isOpen = false;
+        state.commandPalette.selectedIndex = 0;
+    }
+}
+
+function selectCommandItem(index) {
+    const items = state.commandPalette.element?.querySelectorAll('.command-palette-item');
+    if (!items) return;
+
+    items.forEach((item, i) => {
+        item.classList.toggle('selected', i === index);
+    });
+    state.commandPalette.selectedIndex = index;
+}
+
+function executeCommand(index = state.commandPalette.selectedIndex) {
+    const command = state.commandPalette.commands[index];
+    if (command) {
+        hideCommandPalette();
+        command.action();
+    }
+}
+
+function navigateCommandPalette(direction) {
+    const newIndex = direction === 'down'
+        ? Math.min(state.commandPalette.selectedIndex + 1, state.commandPalette.commands.length - 1)
+        : Math.max(state.commandPalette.selectedIndex - 1, 0);
+    selectCommandItem(newIndex);
+}
+
+function showInlineTaskInput(parentNode) {
+    if (!parentNode) return;
+
+    const detailPanel = document.getElementById('detail-panel');
+    const subtasksSection = detailPanel.querySelector('.detail-section h3')?.parentElement;
+
+    if (!subtasksSection) {
+        // Create a section for subtasks if it doesn't exist
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        section.innerHTML = '<h3>📋 Subtasks</h3><div class="subtasks-list"></div>';
+
+        // Insert before content section
+        const contentSection = Array.from(detailPanel.querySelectorAll('.detail-section'))
+            .find(s => s.querySelector('h3')?.textContent.includes('Content'));
+        if (contentSection) {
+            detailPanel.insertBefore(section, contentSection);
+        }
+    }
+
+    // Find or create subtasks list container
+    let subtasksList = detailPanel.querySelector('.subtasks-list');
+    if (!subtasksList) {
+        subtasksList = document.createElement('div');
+        subtasksList.className = 'subtasks-list';
+        const h3 = Array.from(detailPanel.querySelectorAll('h3'))
+            .find(h => h.textContent.includes('Subtasks'));
+        if (h3) {
+            h3.parentElement.appendChild(subtasksList);
+        }
+    }
+
+    // Create inline input
+    const inlineInput = document.createElement('div');
+    inlineInput.className = 'inline-task-input';
+    inlineInput.id = 'inline-task-input';
+    inlineInput.innerHTML = `
+        <input type="text" placeholder="Type subtask title... (press Enter to save, Esc to cancel)" id="inline-task-title" autofocus>
+        <div class="inline-task-meta">
+            <select id="inline-task-priority">
+                <option value="3">🟡 P3</option>
+                <option value="1">🔴 P1</option>
+                <option value="2">🟠 P2</option>
+                <option value="4">🟢 P4</option>
+                <option value="5">⚪ P5</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="inline-task-save">✓</button>
+            <button class="btn btn-ghost btn-sm" id="inline-task-cancel">✕</button>
+        </div>
+    `;
+
+    // Insert at the top of subtasks list
+    if (subtasksList.firstChild) {
+        subtasksList.insertBefore(inlineInput, subtasksList.firstChild);
+    } else {
+        subtasksList.appendChild(inlineInput);
+    }
+
+    const input = document.getElementById('inline-task-title');
+    const saveBtn = document.getElementById('inline-task-save');
+    const cancelBtn = document.getElementById('inline-task-cancel');
+    const prioritySelect = document.getElementById('inline-task-priority');
+
+    input.focus();
+
+    const saveTask = async () => {
+        const title = input.value.trim();
+        if (!title) return;
+
+        const priority = parseInt(prioritySelect.value);
+
+        await createNode({
+            title,
+            mode: 'task',
+            parent_id: parentNode.id,
+            priority
+        });
+
+        inlineInput.remove();
+        await refreshAll();
+    };
+
+    const cancel = () => {
+        inlineInput.remove();
+    };
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveTask();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+        }
+    });
+
+    saveBtn.addEventListener('click', saveTask);
+    cancelBtn.addEventListener('click', cancel);
+}
+
 // Event handlers
 function setupEventListeners() {
     // View toggle
@@ -852,8 +1095,35 @@ async function refreshAll() {
 document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     await refreshAll();
-    
+
     // Expand root nodes by default
     state.nodes.forEach(node => state.expandedNodes.add(node.id));
     refreshTree();
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Cmd/Ctrl + K to open command palette from anywhere
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            const detailContent = document.getElementById('detail-content');
+            if (detailContent && state.selectedNode) {
+                showCommandPalette(detailContent);
+            }
+        }
+
+        // Close command palette on click outside
+        if (state.commandPalette.isOpen && e.target.closest && !e.target.closest('#command-palette')) {
+            // Check if clicked outside
+            if (e.type === 'click') {
+                hideCommandPalette();
+            }
+        }
+    });
+
+    // Close command palette on click outside
+    document.addEventListener('click', (e) => {
+        if (state.commandPalette.isOpen && !e.target.closest('#command-palette') && !e.target.closest('textarea')) {
+            hideCommandPalette();
+        }
+    });
 });

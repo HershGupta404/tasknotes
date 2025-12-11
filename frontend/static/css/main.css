@@ -836,6 +836,130 @@ select.status-cancelled { border-left: 3px solid var(--priority-5); }
     font-style: italic;
 }
 
+/* Inline Command Palette */
+.inline-command-palette {
+    position: absolute;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 300px;
+    max-width: 400px;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.command-palette-search {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.command-palette-search input {
+    width: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.command-palette-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.command-palette-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.command-palette-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: background 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.command-palette-item:hover,
+.command-palette-item.selected {
+    background: var(--bg-tertiary);
+    border-left-color: var(--accent);
+}
+
+.command-palette-item-icon {
+    font-size: 1.1rem;
+}
+
+.command-palette-item-content {
+    flex: 1;
+}
+
+.command-palette-item-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.command-palette-item-description {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.command-palette-item-shortcut {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* Inline Input for quick task creation */
+.inline-task-input {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    margin: 8px 0;
+    border: 2px solid var(--accent);
+}
+
+.inline-task-input input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 6px;
+    font-size: 0.9rem;
+}
+
+.inline-task-input input:focus {
+    outline: none;
+}
+
+.inline-task-input input::placeholder {
+    color: var(--text-secondary);
+}
+
+.inline-task-meta {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.inline-task-meta select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .app-container {
