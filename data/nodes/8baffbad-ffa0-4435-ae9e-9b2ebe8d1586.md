@@ -6,9 +6,9 @@ mode: task
 parent_id: a970407e-49e9-44bd-91ce-ed8387951cdb
 position: 0
 priority: 3
-status: todo
+status: done
 title: make subtasks better
-updated_at: '2025-12-10T17:36:09.525276'
+updated_at: '2025-12-11T19:04:35.494753'
 ---
 
 nice

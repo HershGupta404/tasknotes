@@ -152,7 +152,7 @@ function renderNode(node, depth = 0) {
                     ${hasChildren ? `<span>${node.children.length} subtask${node.children.length > 1 ? 's' : ''}</span>` : ''}
                 </div>
             </div>
-            ${node.mode === 'task' ? '<button class="btn-icon add-subtask" data-id="' + node.id + '" title="Add subtask">+</button>' : ''}
+            ${node.mode === 'task' ? `<button class="btn-icon add-subtask" data-id="${node.id}" title="Add subtask">+</button>` : ''}
         </div>
     `;
     
