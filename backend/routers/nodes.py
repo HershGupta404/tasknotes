@@ -81,6 +81,7 @@ def autocomplete_nodes(
 @router.get("/{node_id}", response_model=NodeResponse)
 def get_node(node_id: str, db: Session = Depends(get_db)):
     """Get a single node."""
+    from ..models import Node
     node = node_service.get_node(db, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
