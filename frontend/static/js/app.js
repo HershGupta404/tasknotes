@@ -738,6 +738,40 @@ async function renderPageView() {
                     }
                 });
             });
+
+            // Setup command palette for page content editor
+            const pageContentTextarea = document.getElementById('page-content-text');
+            if (pageContentTextarea) {
+                pageContentTextarea.addEventListener('keydown', (e) => {
+                    if (e.key === '/' && pageContentTextarea.selectionStart === pageContentTextarea.value.length) {
+                        // Only trigger if cursor is at the end or on a new line
+                        const beforeCursor = pageContentTextarea.value.substring(0, pageContentTextarea.selectionStart);
+                        const lastChar = beforeCursor[beforeCursor.length - 1];
+
+                        if (!lastChar || lastChar === '\n' || lastChar === ' ') {
+                            e.preventDefault();
+                            showCommandPalette(pageContentTextarea);
+                        }
+                    }
+
+                    // Command palette navigation
+                    if (state.commandPalette.isOpen) {
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            navigateCommandPalette('down');
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            navigateCommandPalette('up');
+                        } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            executeCommand();
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            hideCommandPalette();
+                        }
+                    }
+                });
+            }
         }
     } else {
         pageContent.innerHTML = `
@@ -1105,8 +1139,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Cmd/Ctrl + K to open command palette from anywhere
         if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
             e.preventDefault();
+
+            // Check if in page view or detail view
+            const pageContentText = document.getElementById('page-content-text');
             const detailContent = document.getElementById('detail-content');
-            if (detailContent && state.selectedNode) {
+
+            if (pageContentText && state.currentView === 'page' && state.activeTab) {
+                showCommandPalette(pageContentText);
+            } else if (detailContent && state.selectedNode) {
                 showCommandPalette(detailContent);
             }
         }
