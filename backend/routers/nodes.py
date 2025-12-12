@@ -51,6 +51,86 @@ def get_tree(db: Session = Depends(get_db)):
     return node_service.build_tree(db)
 
 
+@router.get("/graph")
+def get_graph(db: Session = Depends(get_db)):
+    """Get graph data for visualization (nodes and edges)."""
+    from ..models import Node, NodeLink
+    from datetime import datetime, timezone
+
+    # Get all nodes
+    all_nodes = db.query(Node).all()
+
+    # Build nodes array with metadata for visualization
+    nodes = []
+    for node in all_nodes:
+        # Calculate node size
+        if node.mode == 'task':
+            # Size based on urgency (closer due date = larger)
+            if node.due_date:
+                now = datetime.now(timezone.utc)
+                due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
+                days_until = (due - now).days
+                # Invert: closer = larger (max size 30, min size 8)
+                size = max(8, min(30, 30 - days_until))
+            else:
+                size = 12  # Default size for tasks without due date
+        else:
+            # Size based on link count
+            link_count = db.query(NodeLink).filter(
+                (NodeLink.source_id == node.id) | (NodeLink.target_id == node.id)
+            ).count()
+            size = max(8, min(30, 8 + link_count * 3))
+
+        nodes.append({
+            "id": node.id,
+            "title": node.title,
+            "mode": node.mode,
+            "status": node.status,
+            "priority": node.priority,
+            "parent_id": node.parent_id,
+            "size": size,
+            "is_root": node.parent_id is None and node.mode == 'task'
+        })
+
+    # Build edges array
+    edges = []
+
+    # 1. Parent-child relationships (bidirectional edges for subtasks)
+    for node in all_nodes:
+        if node.parent_id:
+            edges.append({
+                "source": node.parent_id,
+                "target": node.id,
+                "type": "hierarchy",
+                "bidirectional": True
+            })
+
+    # 2. Wiki links (undirected edges)
+    wiki_links = db.query(NodeLink).filter(NodeLink.link_type == "wiki").all()
+    for link in wiki_links:
+        edges.append({
+            "source": link.source_id,
+            "target": link.target_id,
+            "type": "reference",
+            "bidirectional": False
+        })
+
+    # 3. Dependencies (unidirectional edges from preceding to dependent)
+    dependencies = db.query(NodeLink).filter(NodeLink.link_type == "dependency").all()
+    for link in dependencies:
+        edges.append({
+            "source": link.target_id,  # Preceding task
+            "target": link.source_id,  # Dependent task
+            "type": "dependency",
+            "bidirectional": False
+        })
+
+    return {
+        "nodes": nodes,
+        "edges": edges
+    }
+
+
 @router.get("/search")
 def search_nodes(
     q: str,

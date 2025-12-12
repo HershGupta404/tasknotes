@@ -566,6 +566,12 @@ function switchView(viewName) {
     // Toggle view containers
     document.getElementById('tree-view').style.display = viewName === 'tree' ? 'block' : 'none';
     document.getElementById('page-view').style.display = viewName === 'page' ? 'block' : 'none';
+    document.getElementById('graph-view').style.display = viewName === 'graph' ? 'block' : 'none';
+
+    // Load graph if switching to graph view
+    if (viewName === 'graph') {
+        loadGraph();
+    }
 }
 
 function openInPageView(node) {
@@ -785,6 +791,192 @@ async function renderPageView() {
 
 function openNewPage() {
     showCreateModal('note');
+}
+
+// Graph View Functions
+async function loadGraph() {
+    try {
+        const response = await fetch('/api/nodes/graph');
+        const data = await response.json();
+        renderGraph(data);
+    } catch (error) {
+        console.error('Failed to load graph:', error);
+    }
+}
+
+function renderGraph(graphData) {
+    const container = document.getElementById('graph-container');
+    container.innerHTML = ''; // Clear existing graph
+
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    // Create SVG
+    const svg = d3.select('#graph-container')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+    // Add zoom behavior
+    const g = svg.append('g');
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on('zoom', (event) => {
+            g.attr('transform', event.transform);
+        });
+    svg.call(zoom);
+
+    // Create force simulation
+    const simulation = d3.forceSimulation(graphData.nodes)
+        .force('link', d3.forceLink(graphData.edges)
+            .id(d => d.id)
+            .distance(d => {
+                if (d.type === 'hierarchy') return 100;
+                if (d.type === 'dependency') return 150;
+                return 120;
+            }))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(d => d.size + 10));
+
+    // Add extra force to center root tasks
+    const rootNodes = graphData.nodes.filter(n => n.is_root);
+    if (rootNodes.length > 0) {
+        simulation.force('root-center', d3.forceRadial(
+            0,
+            width / 2,
+            height / 2
+        ).strength(d => d.is_root ? 0.3 : 0));
+    }
+
+    // Create arrow markers for directed edges
+    svg.append('defs').selectAll('marker')
+        .data(['dependency'])
+        .join('marker')
+        .attr('id', d => `arrow-${d}`)
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 20)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#fbbf24')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+    // Draw links
+    const link = g.append('g')
+        .selectAll('line')
+        .data(graphData.edges)
+        .join('line')
+        .attr('class', d => `graph-link ${d.type}`)
+        .attr('marker-end', d => d.type === 'dependency' ? 'url(#arrow-dependency)' : null);
+
+    // Draw bidirectional arrows for hierarchy
+    const hierarchyArrows = g.append('g')
+        .selectAll('path')
+        .data(graphData.edges.filter(d => d.bidirectional))
+        .join('path')
+        .attr('fill', 'none')
+        .attr('stroke', 'none');
+
+    // Add arrow markers to both ends of hierarchical links
+    svg.select('defs').append('marker')
+        .attr('id', 'arrow-hierarchy-start')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 0)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#e94560')
+        .attr('d', 'M10,-5L0,0L10,5');
+
+    svg.select('defs').append('marker')
+        .attr('id', 'arrow-hierarchy-end')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 20)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#e94560')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+    // Update hierarchy links to have arrows on both ends
+    link.filter(d => d.type === 'hierarchy')
+        .attr('marker-start', 'url(#arrow-hierarchy-start)')
+        .attr('marker-end', 'url(#arrow-hierarchy-end)');
+
+    // Draw nodes
+    const node = g.append('g')
+        .selectAll('circle')
+        .data(graphData.nodes)
+        .join('circle')
+        .attr('class', d => {
+            if (d.mode === 'note') return 'graph-node note';
+            return `graph-node task-priority-${d.priority}`;
+        })
+        .attr('r', d => d.size)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2)
+        .call(d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended))
+        .on('click', (event, d) => {
+            selectNode(d.id);
+        });
+
+    // Add labels
+    const label = g.append('g')
+        .selectAll('text')
+        .data(graphData.nodes)
+        .join('text')
+        .attr('class', 'graph-label')
+        .attr('dy', d => d.size + 15)
+        .text(d => d.title.length > 20 ? d.title.substring(0, 20) + '...' : d.title);
+
+    // Add tooltips
+    node.append('title')
+        .text(d => `${d.title}\n${d.mode === 'task' ? `Priority: ${d.priority}\nStatus: ${d.status}` : 'Note'}`);
+
+    // Update positions on each tick
+    simulation.on('tick', () => {
+        link
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+
+        node
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y);
+
+        label
+            .attr('x', d => d.x)
+            .attr('y', d => d.y);
+    });
+
+    // Drag functions
+    function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+    }
 }
 
 // Inline Command Palette Functions

@@ -971,6 +971,82 @@ select.status-cancelled { border-left: 3px solid var(--priority-5); }
     }
 }
 
+/* Graph View */
+.graph-container {
+    width: 100%;
+    height: calc(100vh - 140px);
+    background: var(--bg-primary);
+    border-radius: 8px;
+    position: relative;
+}
+
+.graph-container svg {
+    width: 100%;
+    height: 100%;
+}
+
+.graph-node {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.graph-node:hover {
+    stroke-width: 3px;
+}
+
+.graph-node.note {
+    fill: #60a5fa;
+}
+
+.graph-node.task-priority-1 {
+    fill: var(--priority-1);
+}
+
+.graph-node.task-priority-2 {
+    fill: var(--priority-2);
+}
+
+.graph-node.task-priority-3 {
+    fill: var(--priority-3);
+}
+
+.graph-node.task-priority-4 {
+    fill: var(--priority-4);
+}
+
+.graph-node.task-priority-5 {
+    fill: var(--priority-5);
+}
+
+.graph-link {
+    stroke: var(--border);
+    stroke-opacity: 0.6;
+    fill: none;
+}
+
+.graph-link.hierarchy {
+    stroke: var(--accent);
+    stroke-width: 2px;
+}
+
+.graph-link.reference {
+    stroke: #60a5fa;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5,5;
+}
+
+.graph-link.dependency {
+    stroke: var(--warning);
+    stroke-width: 2px;
+}
+
+.graph-label {
+    font-size: 12px;
+    fill: var(--text-primary);
+    pointer-events: none;
+    text-anchor: middle;
+}
+
 @media (max-width: 768px) {
     .app-container {
         grid-template-columns: 1fr;

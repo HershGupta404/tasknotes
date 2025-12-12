@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TaskNotes</title>
     <link rel="stylesheet" href="/static/css/main.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -54,6 +55,7 @@
             <div class="view-toggle">
                 <button class="view-btn active" data-view="tree">🌲 Tree View</button>
                 <button class="view-btn" data-view="page">📄 Page View</button>
+                <button class="view-btn" data-view="graph">🕸️ Graph View</button>
             </div>
 
             <!-- Tree View -->
@@ -85,6 +87,15 @@
                     <div class="empty-state">
                         <h3>No page open</h3>
                         <p>Select a node or create a new page</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph View -->
+            <div id="graph-view" class="view-container" style="display: none;">
+                <div id="graph-container" class="graph-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
                     </div>
                 </div>
             </div>
