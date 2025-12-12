@@ -855,7 +855,7 @@ function renderGraph(graphData) {
         .join('marker')
         .attr('id', d => `arrow-${d}`)
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 20)
+        .attr('refX', 15)
         .attr('refY', 0)
         .attr('markerWidth', 6)
         .attr('markerHeight', 6)
@@ -864,27 +864,11 @@ function renderGraph(graphData) {
         .attr('fill', '#fbbf24')
         .attr('d', 'M0,-5L10,0L0,5');
 
-    // Draw links
-    const link = g.append('g')
-        .selectAll('line')
-        .data(graphData.edges)
-        .join('line')
-        .attr('class', d => `graph-link ${d.type}`)
-        .attr('marker-end', d => d.type === 'dependency' ? 'url(#arrow-dependency)' : null);
-
-    // Draw bidirectional arrows for hierarchy
-    const hierarchyArrows = g.append('g')
-        .selectAll('path')
-        .data(graphData.edges.filter(d => d.bidirectional))
-        .join('path')
-        .attr('fill', 'none')
-        .attr('stroke', 'none');
-
     // Add arrow markers to both ends of hierarchical links
     svg.select('defs').append('marker')
         .attr('id', 'arrow-hierarchy-start')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 0)
+        .attr('refX', -15)
         .attr('refY', 0)
         .attr('markerWidth', 6)
         .attr('markerHeight', 6)
@@ -896,7 +880,7 @@ function renderGraph(graphData) {
     svg.select('defs').append('marker')
         .attr('id', 'arrow-hierarchy-end')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 20)
+        .attr('refX', 15)
         .attr('refY', 0)
         .attr('markerWidth', 6)
         .attr('markerHeight', 6)
@@ -904,6 +888,15 @@ function renderGraph(graphData) {
         .append('path')
         .attr('fill', '#e94560')
         .attr('d', 'M0,-5L10,0L0,5');
+
+    // Draw links with shortened endpoints to account for node radius
+    const link = g.append('g')
+        .selectAll('path')
+        .data(graphData.edges)
+        .join('path')
+        .attr('class', d => `graph-link ${d.type}`)
+        .attr('fill', 'none')
+        .attr('marker-end', d => d.type === 'dependency' ? 'url(#arrow-dependency)' : null);
 
     // Update hierarchy links to have arrows on both ends
     link.filter(d => d.type === 'hierarchy')
@@ -926,8 +919,11 @@ function renderGraph(graphData) {
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended))
-        .on('click', (event, d) => {
-            selectNode(d.id);
+        .on('click', async (event, d) => {
+            event.stopPropagation();
+            const fullNode = await fetchNode(d.id);
+            state.selectedNode = fullNode;
+            await renderDetailPanel(fullNode);
         });
 
     // Add labels
@@ -945,11 +941,26 @@ function renderGraph(graphData) {
 
     // Update positions on each tick
     simulation.on('tick', () => {
-        link
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
+        // Update links to stop at node edge
+        link.attr('d', d => {
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const dr = Math.sqrt(dx * dx + dy * dy);
+
+            // Calculate angle
+            const angle = Math.atan2(dy, dx);
+
+            // Shorten line by node radius on both ends
+            const sourceRadius = d.source.size || 12;
+            const targetRadius = d.target.size || 12;
+
+            const sourceX = d.source.x + Math.cos(angle) * sourceRadius;
+            const sourceY = d.source.y + Math.sin(angle) * sourceRadius;
+            const targetX = d.target.x - Math.cos(angle) * targetRadius;
+            const targetY = d.target.y - Math.sin(angle) * targetRadius;
+
+            return `M${sourceX},${sourceY}L${targetX},${targetY}`;
+        });
 
         node
             .attr('cx', d => d.x)

@@ -66,12 +66,19 @@ def get_graph(db: Session = Depends(get_db)):
         # Calculate node size
         if node.mode == 'task':
             # Size based on urgency (closer due date = larger)
+            # Range: today = 25, 7+ days = 10
             if node.due_date:
                 now = datetime.now(timezone.utc)
                 due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
                 days_until = (due - now).days
-                # Invert: closer = larger (max size 30, min size 8)
-                size = max(8, min(30, 30 - days_until))
+                # Scale: 0 days = 25, 7+ days = 10
+                if days_until <= 0:
+                    size = 25
+                elif days_until >= 7:
+                    size = 10
+                else:
+                    # Linear interpolation: 25 at 0 days, 10 at 7 days
+                    size = 25 - (days_until * 15 / 7)
             else:
                 size = 12  # Default size for tasks without due date
         else:
@@ -79,7 +86,7 @@ def get_graph(db: Session = Depends(get_db)):
             link_count = db.query(NodeLink).filter(
                 (NodeLink.source_id == node.id) | (NodeLink.target_id == node.id)
             ).count()
-            size = max(8, min(30, 8 + link_count * 3))
+            size = max(10, min(25, 10 + link_count * 2))
 
         nodes.append({
             "id": node.id,
@@ -184,7 +191,14 @@ def get_children(node_id: str, db: Session = Depends(get_db)):
 def create_node(node: NodeCreate, db: Session = Depends(get_db)):
     """Create a new node."""
     from ..models import Node
+    from ..services.due_date_service import propagate_all_due_dates
+
     created = node_service.create_node(db, node)
+
+    # Propagate due dates if this is a task
+    if created.mode == 'task':
+        propagate_all_due_dates(db, created)
+
     created.children_count = db.query(Node).filter(Node.parent_id == created.id).count()
     return created
 
@@ -193,9 +207,16 @@ def create_node(node: NodeCreate, db: Session = Depends(get_db)):
 def update_node(node_id: str, updates: NodeUpdate, db: Session = Depends(get_db)):
     """Update a node."""
     from ..models import Node
+    from ..services.due_date_service import propagate_all_due_dates
+
     node = node_service.update_node(db, node_id, updates)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+
+    # Propagate due dates if this is a task and due_date was updated
+    if node.mode == 'task' and updates.due_date is not None:
+        propagate_all_due_dates(db, node)
+
     node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
     return node
 
@@ -282,9 +303,18 @@ def get_dependencies(node_id: str, db: Session = Depends(get_db)):
 @router.post("/links", response_model=LinkResponse)
 def create_link(link: LinkCreate, db: Session = Depends(get_db)):
     """Create a link between nodes."""
+    from ..services.due_date_service import propagate_dependency_due_dates
+
     created = node_service.create_link(db, link.source_id, link.target_id, link.link_type)
     if not created:
         raise HTTPException(status_code=400, detail="Could not create link")
+
+    # Propagate due dates if this is a dependency link
+    if link.link_type == "dependency":
+        source_node = node_service.get_node(db, link.source_id)
+        if source_node and source_node.mode == 'task':
+            propagate_dependency_due_dates(db, source_node)
+
     return created
 
 
