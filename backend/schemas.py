@@ -11,6 +11,7 @@ class NodeBase(BaseModel):
     status: Literal["todo", "in_progress", "done", "cancelled"] = "todo"
     priority: int = Field(default=3, ge=1, le=5)
     due_date: Optional[datetime] = None
+    tags: List[str] = Field(default_factory=list)
     parent_id: Optional[str] = None
 
 
@@ -25,6 +26,7 @@ class NodeUpdate(BaseModel):
     status: Optional[Literal["todo", "in_progress", "done", "cancelled"]] = None
     priority: Optional[int] = Field(None, ge=1, le=5)
     due_date: Optional[datetime] = None
+    tags: Optional[List[str]] = None
     parent_id: Optional[str] = None
     position: Optional[int] = None
 
@@ -77,6 +79,7 @@ class FilterParams(BaseModel):
     status: Optional[Literal["todo", "in_progress", "done", "cancelled"]] = None
     priority: Optional[int] = None
     has_due_date: Optional[bool] = None
+    tags: Optional[List[str]] = None  # Filter by tags (nodes must have at least ONE of the specified tags)
     parent_id: Optional[str] = None  # None = root nodes, "all" = all nodes
     sort_by: Literal["position", "priority", "due_date", "created_at", "title"] = "position"
     sort_desc: bool = False

@@ -11,8 +11,16 @@ const state = {
     expandedNodes: new Set(),
     filters: {
         mode: null,
-        status: null
+        status: null,
+        priority: null,
+        tags: [],
+        dateFrom: null,
+        dateTo: null,
+        showSubtasks: false,
+        showDependencies: false,
+        showCompletedRoots: false
     },
+    createModalTags: [],
     searchQuery: '',
     currentView: 'tree', // 'tree' or 'page'
     openTabs: [],  // Array of {id, title, node}
@@ -173,10 +181,10 @@ function renderDueBadge(dueDateStr) {
     const due = new Date(dueDateStr);
     const now = new Date();
     const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-    
+
     let label = due.toLocaleDateString();
     let className = 'badge-due';
-    
+
     if (diffDays < 0) {
         label = `Overdue (${Math.abs(diffDays)}d)`;
         className = 'badge-overdue';
@@ -187,8 +195,19 @@ function renderDueBadge(dueDateStr) {
     } else if (diffDays <= 7) {
         label = `Due in ${diffDays}d`;
     }
-    
+
     return `<span class="node-badge ${className}">${label}</span>`;
+}
+
+function getPriorityLabel(priority) {
+    const labels = {
+        1: '🔴 P1 (Urgent)',
+        2: '🟠 P2 (High)',
+        3: '🟡 P3 (Medium)',
+        4: '🟢 P4 (Low)',
+        5: '⚪ P5 (Someday)'
+    };
+    return labels[priority] || 'Unknown';
 }
 
 async function renderDetailPanel(node) {
@@ -209,15 +228,13 @@ async function renderDetailPanel(node) {
     const parentNode = node.parent_id ? await fetchNode(node.parent_id) : null;
     const subtasks = node.children && node.children.length > 0 ? node.children : [];
 
-    // Render wiki links in content preview
-    const contentPreview = renderWikiLinks(node.content || 'No content');
+    // Render markdown content
+    const contentRendered = renderMarkdown(node.content);
 
     panel.innerHTML = `
-        <div class="detail-header">
-            <div class="mode-toggle">
-                <button class="${node.mode === 'task' ? 'active' : ''}" data-mode="task">Task</button>
-                <button class="${node.mode === 'note' ? 'active' : ''}" data-mode="note">Note</button>
-            </div>
+        <div class="detail-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h2 style="margin: 0; font-size: 1.2rem;">${node.mode === 'task' ? '📋' : '📝'} ${escapeHtml(node.title)}</h2>
+            <button class="btn btn-primary" id="edit-node-btn">Edit</button>
         </div>
 
         ${parentNode ? `
@@ -235,38 +252,35 @@ async function renderDetailPanel(node) {
         ` : ''}
 
         <div class="detail-section">
-            <div class="form-group">
-                <label>Title</label>
-                <input type="text" id="detail-title" value="${escapeHtml(node.title)}">
-            </div>
+            <h3>Metadata</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 12px 16px; font-size: 0.9rem;">
+                <div style="color: var(--text-secondary); font-weight: 500;">Type:</div>
+                <div>${node.mode === 'task' ? '📋 Task' : '📝 Note'}</div>
 
-            ${node.mode === 'task' ? `
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select id="detail-status" class="status-${node.status}">
-                            <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
-                            <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-                            <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
-                            <option value="cancelled" ${node.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
-                        </select>
+                ${node.mode === 'task' ? `
+                    <div style="color: var(--text-secondary); font-weight: 500;">Status:</div>
+                    <div><span class="node-badge badge-${node.status}">${node.status}</span></div>
+
+                    <div style="color: var(--text-secondary); font-weight: 500;">Priority:</div>
+                    <div>${getPriorityLabel(node.priority)}</div>
+
+                    ${node.due_date ? `
+                        <div style="color: var(--text-secondary); font-weight: 500;">Due Date:</div>
+                        <div>${renderDueBadge(node.due_date)}</div>
+                    ` : ''}
+                ` : ''}
+
+                ${node.tags && node.tags.length > 0 ? `
+                    <div style="color: var(--text-secondary); font-weight: 500;">Tags:</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        ${node.tags.map(tag => `
+                            <span class="tag-chip" style="cursor: default;">
+                                ${escapeHtml(tag)}
+                            </span>
+                        `).join('')}
                     </div>
-                    <div class="form-group">
-                        <label>Priority</label>
-                        <select id="detail-priority">
-                            <option value="1" ${node.priority === 1 ? 'selected' : ''}>🔴 Urgent</option>
-                            <option value="2" ${node.priority === 2 ? 'selected' : ''}>🟠 High</option>
-                            <option value="3" ${node.priority === 3 ? 'selected' : ''}>🟡 Medium</option>
-                            <option value="4" ${node.priority === 4 ? 'selected' : ''}>🟢 Low</option>
-                            <option value="5" ${node.priority === 5 ? 'selected' : ''}>⚪ Someday</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Due Date</label>
-                    <input type="datetime-local" id="detail-due" value="${node.due_date ? formatDateForInput(node.due_date) : ''}">
-                </div>
-            ` : ''}
+                ` : ''}
+            </div>
         </div>
 
         ${subtasks.length > 0 ? `
@@ -344,11 +358,9 @@ async function renderDetailPanel(node) {
         ` : '')}
 
         <div class="detail-section">
-            <h3>Content (Markdown)</h3>
-            <textarea id="detail-content" placeholder="Add notes, details, or markdown content... Use [[Page Name]] to link to other notes">${escapeHtml(node.content || '')}</textarea>
-            <div style="margin-top: 8px; padding: 8px; background: var(--bg-primary); border-radius: 6px;">
-                <small style="color: var(--text-secondary);">Preview:</small>
-                <div class="content-renderer">${contentPreview}</div>
+            <h3>Content</h3>
+            <div class="content-renderer" style="padding: 12px; background: var(--bg-primary); border-radius: 6px; min-height: 100px;">
+                ${contentRendered}
             </div>
         </div>
 
@@ -375,13 +387,8 @@ async function renderDetailPanel(node) {
             <div style="font-size: 0.85rem; color: var(--text-secondary);">
                 <p>Created: ${new Date(node.created_at).toLocaleString()}</p>
                 <p>Updated: ${new Date(node.updated_at).toLocaleString()}</p>
-                <p>Priority Score: ${node.computed_priority?.toFixed(1) || 'N/A'}</p>
+                ${node.mode === 'task' && node.computed_priority ? `<p>Priority Score: ${node.computed_priority.toFixed(1)}</p>` : ''}
             </div>
-        </div>
-
-        <div class="modal-actions">
-            <button class="btn btn-ghost" id="delete-node-btn">Delete</button>
-            <button class="btn btn-primary" id="save-node-btn">Save</button>
         </div>
     `;
 
@@ -403,12 +410,21 @@ async function renderDetailPanel(node) {
         link.addEventListener('click', async (e) => {
             e.preventDefault();
             const title = link.dataset.page;
-            const targetNode = await findNodeByTitle(title);
-            if (targetNode) {
-                state.selectedNode = await fetchNode(targetNode.id);
-                refreshTree();
-                await renderDetailPanel(state.selectedNode);
+            let targetNode = await findNodeByTitle(title);
+
+            // If node doesn't exist, create it as a note
+            if (!targetNode) {
+                const newNode = await createNode({
+                    title: title,
+                    mode: 'note',
+                    content: ''
+                });
+                targetNode = { id: newNode.id };
             }
+
+            state.selectedNode = await fetchNode(targetNode.id);
+            refreshTree();
+            await renderDetailPanel(state.selectedNode);
         });
     });
 
@@ -456,93 +472,150 @@ async function renderDetailPanel(node) {
 }
 
 function setupDetailPanelListeners(node) {
-    // Mode toggle
-    document.querySelectorAll('.mode-toggle button').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            await updateNode(node.id, { mode: btn.dataset.mode });
-            await refreshAll();
+    // Edit button - opens node in page view for editing
+    document.getElementById('edit-node-btn')?.addEventListener('click', () => {
+        openInPageView(node);
+    });
+}
+
+// Filter functions
+// Helper: Collect all node IDs in subtask DAG (recursive)
+function collectSubtaskDAG(node, collected = new Set()) {
+    if (collected.has(node.id)) return collected;
+    collected.add(node.id);
+
+    if (node.children && node.children.length > 0) {
+        node.children.forEach(child => {
+            collectSubtaskDAG(child, collected);
         });
-    });
+    }
 
-    // Save button
-    document.getElementById('save-node-btn')?.addEventListener('click', async () => {
-        const updates = {
-            title: document.getElementById('detail-title').value,
-            content: document.getElementById('detail-content').value
-        };
+    return collected;
+}
 
-        if (node.mode === 'task') {
-            updates.status = document.getElementById('detail-status').value;
-            updates.priority = parseInt(document.getElementById('detail-priority').value);
-            const dueValue = document.getElementById('detail-due').value;
-            updates.due_date = dueValue ? new Date(dueValue).toISOString() : null;
-        }
+// Helper: Collect all nodes that should be shown for DAG expansion
+function getDAGInclusionSet() {
+    const included = new Set();
 
-        await updateNode(node.id, updates);
-        await refreshAll();
-    });
+    // If showSubtasks is on, collect all nodes in matching subtask hierarchies
+    if (state.filters.showSubtasks) {
+        const allNodes = getAllNodesFlat(state.nodes);
+        allNodes.forEach(node => {
+            // If this node matches filters, include its entire subtask DAG
+            if (matchesFiltersBase(node)) {
+                collectSubtaskDAG(node, included);
 
-    // Delete button
-    document.getElementById('delete-node-btn')?.addEventListener('click', async () => {
-        if (confirm('Delete this item and all its children?')) {
-            await deleteNode(node.id);
-            state.selectedNode = null;
-            await refreshAll();
-        }
-    });
-
-    // Command palette trigger on detail-content textarea
-    const contentTextarea = document.getElementById('detail-content');
-    if (contentTextarea) {
-        contentTextarea.addEventListener('keydown', (e) => {
-            if (e.key === '/' && contentTextarea.selectionStart === contentTextarea.value.length) {
-                // Only trigger if cursor is at the end or on a new line
-                const beforeCursor = contentTextarea.value.substring(0, contentTextarea.selectionStart);
-                const lastChar = beforeCursor[beforeCursor.length - 1];
-
-                if (!lastChar || lastChar === '\n' || lastChar === ' ') {
-                    e.preventDefault();
-                    showCommandPalette(contentTextarea);
-                }
-            }
-
-            // Command palette navigation
-            if (state.commandPalette.isOpen) {
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    navigateCommandPalette('down');
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    navigateCommandPalette('up');
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    executeCommand();
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    hideCommandPalette();
+                // Also include all ancestors up to root
+                let current = node;
+                while (current.parent_id) {
+                    included.add(current.parent_id);
+                    current = allNodes.find(n => n.id === current.parent_id) || { parent_id: null };
                 }
             }
         });
     }
+
+    // If showDependencies is on, we'd need to fetch dependency links
+    // For now, we'll handle this in the graph view
+
+    return included;
 }
 
-// Filter functions
-function matchesFilters(node) {
+// Helper: Get all nodes as flat array
+function getAllNodesFlat(nodes, result = []) {
+    nodes.forEach(node => {
+        result.push(node);
+        if (node.children && node.children.length > 0) {
+            getAllNodesFlat(node.children, result);
+        }
+    });
+    return result;
+}
+
+// Base filter check without DAG logic
+function matchesFiltersBase(node) {
+    // Mode filter
     if (state.filters.mode && node.mode !== state.filters.mode) return false;
-    if (state.filters.status && node.status !== state.filters.status) return false;
+
+    // Status filter - only applies to tasks, so hide notes if status filter is active
+    if (state.filters.status) {
+        if (node.mode !== 'task') return false;
+        if (node.status !== state.filters.status) return false;
+    }
+
+    // Priority filter - only applies to tasks, so hide notes if priority filter is active
+    if (state.filters.priority) {
+        if (node.mode !== 'task') return false;
+        if (node.priority !== parseInt(state.filters.priority)) return false;
+    }
+
+    // Date range filter - only applies to tasks with due dates
+    if (state.filters.dateFrom || state.filters.dateTo) {
+        if (node.mode !== 'task') return false;
+        if (!node.due_date) return false;
+
+        const dueDate = new Date(node.due_date);
+        if (state.filters.dateFrom) {
+            const from = new Date(state.filters.dateFrom);
+            if (dueDate < from) return false;
+        }
+        if (state.filters.dateTo) {
+            const to = new Date(state.filters.dateTo);
+            to.setHours(23, 59, 59, 999);
+            if (dueDate > to) return false;
+        }
+    }
+
+    // Tags filter - node must have at least ONE of the specified tags
+    if (state.filters.tags && state.filters.tags.length > 0) {
+        const nodeTags = new Set(node.tags || []);
+        const hasAnyTag = state.filters.tags.some(tag => nodeTags.has(tag));
+        if (!hasAnyTag) return false;
+    }
+
+    // Search query
     if (state.searchQuery) {
         const query = state.searchQuery.toLowerCase();
-        if (!node.title.toLowerCase().includes(query) && 
+        if (!node.title.toLowerCase().includes(query) &&
             !(node.content || '').toLowerCase().includes(query)) {
             return false;
         }
     }
+
+    // Hide completed root tasks by default
+    if (!state.filters.showCompletedRoots &&
+        node.mode === 'task' &&
+        node.status === 'done' &&
+        !node.parent_id) {
+        return false;
+    }
+
     return true;
 }
 
+function matchesFilters(node) {
+    // If showSubtasks is enabled, check if node should be included in DAG
+    if (state.filters.showSubtasks) {
+        const dagInclusion = getDAGInclusionSet();
+        if (dagInclusion.size > 0 && dagInclusion.has(node.id)) {
+            return true;
+        }
+    }
+
+    // Otherwise, use base filters
+    return matchesFiltersBase(node);
+}
+
 function setFilter(type, value) {
-    state.filters[type] = state.filters[type] === value ? null : value;
+    if (type === 'priority') {
+        state.filters.priority = state.filters.priority === value ? null : value;
+    } else {
+        state.filters[type] = state.filters[type] === value ? null : value;
+    }
     refreshTree();
+    if (state.currentView === 'graph') {
+        loadGraph();
+    }
     updateFilterUI();
 }
 
@@ -550,7 +623,13 @@ function updateFilterUI() {
     document.querySelectorAll('.filter-chip').forEach(chip => {
         const filterType = chip.dataset.filterType;
         const filterValue = chip.dataset.filterValue;
-        chip.classList.toggle('active', state.filters[filterType] === filterValue);
+
+        // For priority, compare as integer
+        if (filterType === 'priority') {
+            chip.classList.toggle('active', state.filters[filterType] === filterValue);
+        } else {
+            chip.classList.toggle('active', state.filters[filterType] === filterValue);
+        }
     });
 }
 
@@ -678,6 +757,21 @@ async function renderPageView() {
                         </div>
                     </div>
 
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Tags</label>
+                        <div class="tags-input-container">
+                            <input type="text" id="page-tags-input" list="tags-autocomplete" placeholder="Type a tag and press Enter...">
+                            <div id="page-tags-display" class="tags-display">
+                                ${(node.tags || []).map(tag => `
+                                    <span class="tag-chip">
+                                        ${escapeHtml(tag)}
+                                        <span class="remove-tag" onclick="removePageTag('${escapeHtml(tag)}')">×</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
                     <textarea class="page-content-editor" id="page-content-text" placeholder="Start writing... Use [[Page Name]] to link to other pages">${escapeHtml(node.content || '')}</textarea>
 
                     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
@@ -705,12 +799,38 @@ async function renderPageView() {
                 </div>
             `;
 
+            // Setup page tags input
+            if (!tab.node.tags) tab.node.tags = [];
+            document.getElementById('page-tags-input')?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const input = e.target;
+                    const tag = input.value.trim();
+                    if (tag && !tab.node.tags.includes(tag)) {
+                        tab.node.tags.push(tag);
+                        input.value = '';
+
+                        // Re-render tags display
+                        const displayEl = document.getElementById('page-tags-display');
+                        if (displayEl) {
+                            displayEl.innerHTML = tab.node.tags.map(t => `
+                                <span class="tag-chip">
+                                    ${escapeHtml(t)}
+                                    <span class="remove-tag" onclick="removePageTag('${escapeHtml(t)}')">×</span>
+                                </span>
+                            `).join('');
+                        }
+                    }
+                }
+            });
+
             // Setup save handler
             document.getElementById('save-page-btn')?.addEventListener('click', async () => {
                 const updates = {
                     title: document.getElementById('page-title').value,
                     content: document.getElementById('page-content-text').value,
-                    mode: document.getElementById('page-mode').value
+                    mode: document.getElementById('page-mode').value,
+                    tags: tab.node.tags || []
                 };
 
                 if (node.mode === 'task') {
@@ -737,11 +857,21 @@ async function renderPageView() {
                 link.addEventListener('click', async (e) => {
                     e.preventDefault();
                     const title = link.dataset.page;
-                    const targetNode = await findNodeByTitle(title);
-                    if (targetNode) {
-                        const fullNode = await fetchNode(targetNode.id);
-                        openInPageView(fullNode);
+                    let targetNode = await findNodeByTitle(title);
+
+                    // If node doesn't exist, create it as a note
+                    if (!targetNode) {
+                        const newNode = await createNode({
+                            title: title,
+                            mode: 'note',
+                            content: ''
+                        });
+                        targetNode = { id: newNode.id };
+                        await refreshTree();
                     }
+
+                    const fullNode = await fetchNode(targetNode.id);
+                    openInPageView(fullNode);
                 });
             });
 
@@ -798,10 +928,126 @@ async function loadGraph() {
     try {
         const response = await fetch('/api/nodes/graph');
         const data = await response.json();
-        renderGraph(data);
+
+        // Apply filters to graph data
+        const filteredData = applyGraphFilters(data);
+        renderGraph(filteredData);
     } catch (error) {
         console.error('Failed to load graph:', error);
     }
+}
+
+function applyGraphFilters(graphData) {
+    // Get all nodes that match filters
+    const matchedNodeIds = new Set();
+
+    // Check if any actual filters are active (excluding DAG options)
+    const hasActiveFilters = state.filters.mode || state.filters.status || state.filters.priority ||
+                             state.filters.dateFrom || state.filters.dateTo ||
+                             (state.filters.tags && state.filters.tags.length > 0) ||
+                             state.searchQuery;
+
+    // First pass: Check which nodes match base filters
+    graphData.nodes.forEach(node => {
+        if (matchesFiltersBase(node)) {
+            matchedNodeIds.add(node.id);
+        }
+    });
+
+    // If DAG options are enabled but no other filters, we want to show all nodes
+    // because the DAG expansion should work from the full set
+    if (!hasActiveFilters && (state.filters.showSubtasks || state.filters.showDependencies)) {
+        graphData.nodes.forEach(node => matchedNodeIds.add(node.id));
+    }
+
+    // If showSubtasks is enabled, include entire subtask DAG
+    if (state.filters.showSubtasks && matchedNodeIds.size > 0) {
+        const nodesToInclude = new Set(matchedNodeIds);
+
+        matchedNodeIds.forEach(nodeId => {
+            const node = graphData.nodes.find(n => n.id === nodeId);
+            if (node) {
+                // Include all descendants (subtasks)
+                const descendants = getAllDescendants(graphData, nodeId);
+                descendants.forEach(id => nodesToInclude.add(id));
+
+                // Include all ancestors up to root
+                const ancestors = getAllAncestors(graphData, nodeId);
+                ancestors.forEach(id => nodesToInclude.add(id));
+            }
+        });
+
+        matchedNodeIds.clear();
+        nodesToInclude.forEach(id => matchedNodeIds.add(id));
+    }
+
+    // If showDependencies is enabled, include all dependent nodes
+    if (state.filters.showDependencies && matchedNodeIds.size > 0) {
+        const nodesToInclude = new Set(matchedNodeIds);
+
+        matchedNodeIds.forEach(nodeId => {
+            // Include all nodes connected via dependency links
+            const dependencyConnected = getAllDependencyConnected(graphData, nodeId);
+            dependencyConnected.forEach(id => nodesToInclude.add(id));
+        });
+
+        matchedNodeIds.clear();
+        nodesToInclude.forEach(id => matchedNodeIds.add(id));
+    }
+
+    // Filter nodes and edges
+    const filteredNodes = graphData.nodes.filter(n => matchedNodeIds.has(n.id));
+    const filteredEdges = graphData.edges.filter(e =>
+        matchedNodeIds.has(e.source) && matchedNodeIds.has(e.target)
+    );
+
+    return {
+        nodes: filteredNodes,
+        edges: filteredEdges
+    };
+}
+
+function getAllDescendants(graphData, nodeId, visited = new Set()) {
+    if (visited.has(nodeId)) return visited;
+    visited.add(nodeId);
+
+    // Find all child edges (hierarchy type)
+    graphData.edges
+        .filter(e => e.type === 'hierarchy' && e.source === nodeId)
+        .forEach(edge => {
+            getAllDescendants(graphData, edge.target, visited);
+        });
+
+    return visited;
+}
+
+function getAllAncestors(graphData, nodeId, visited = new Set()) {
+    if (visited.has(nodeId)) return visited;
+
+    // Find parent edges (hierarchy type)
+    graphData.edges
+        .filter(e => e.type === 'hierarchy' && e.target === nodeId)
+        .forEach(edge => {
+            visited.add(edge.source);
+            getAllAncestors(graphData, edge.source, visited);
+        });
+
+    return visited;
+}
+
+function getAllDependencyConnected(graphData, nodeId, visited = new Set()) {
+    if (visited.has(nodeId)) return visited;
+    visited.add(nodeId);
+
+    // Find all dependency edges connected to this node
+    graphData.edges
+        .filter(e => e.type === 'dependency' && (e.source === nodeId || e.target === nodeId))
+        .forEach(edge => {
+            const connectedId = edge.source === nodeId ? edge.target : edge.source;
+            getAllDependencyConnected(graphData, connectedId, visited);
+        });
+
+    return visited;
 }
 
 function renderGraph(graphData) {
@@ -1227,7 +1473,81 @@ function setupEventListeners() {
             setFilter(chip.dataset.filterType, chip.dataset.filterValue);
         });
     });
-    
+
+    // Date filter inputs
+    document.getElementById('filter-date-from')?.addEventListener('change', (e) => {
+        state.filters.dateFrom = e.target.value || null;
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    });
+
+    document.getElementById('filter-date-to')?.addEventListener('change', (e) => {
+        state.filters.dateTo = e.target.value || null;
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    });
+
+    // Checkbox filters
+    document.getElementById('filter-show-subtasks')?.addEventListener('change', (e) => {
+        state.filters.showSubtasks = e.target.checked;
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    });
+
+    document.getElementById('filter-show-dependencies')?.addEventListener('change', (e) => {
+        state.filters.showDependencies = e.target.checked;
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    });
+
+    document.getElementById('filter-show-completed')?.addEventListener('change', (e) => {
+        state.filters.showCompletedRoots = e.target.checked;
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    });
+
+    // Tags filter input
+    document.getElementById('filter-tags-input')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const input = e.target;
+            const tag = input.value.trim();
+            if (tag && !state.filters.tags.includes(tag)) {
+                state.filters.tags.push(tag);
+                input.value = '';
+                renderTagsDisplay('filter');
+                refreshTree();
+                if (state.currentView === 'graph') {
+                    loadGraph();
+                }
+            }
+        }
+    });
+
+    // Create modal tags input
+    document.getElementById('create-tags-input')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const input = e.target;
+            const tag = input.value.trim();
+            if (tag && !state.createModalTags.includes(tag)) {
+                state.createModalTags.push(tag);
+                input.value = '';
+                renderTagsDisplay('create');
+            }
+        }
+    });
+
     // Tree interactions
     document.getElementById('tree-container')?.addEventListener('click', async (e) => {
         // Toggle expand
@@ -1301,16 +1621,151 @@ function debounce(fn, delay) {
     };
 }
 
-function renderWikiLinks(content) {
-    // Convert [[Page Name]] to clickable links
-    const pattern = /\[\[([^\]]+)\]\]/g;
+// Tags management functions
+function getAllTags() {
+    const tagsSet = new Set();
+    const collectTags = (nodes) => {
+        nodes.forEach(node => {
+            if (node.tags && Array.isArray(node.tags)) {
+                node.tags.forEach(tag => tagsSet.add(tag));
+            }
+            if (node.children && node.children.length > 0) {
+                collectTags(node.children);
+            }
+        });
+    };
+    collectTags(state.nodes);
+    return Array.from(tagsSet).sort();
+}
+
+function updateTagsAutocomplete() {
+    const datalist = document.getElementById('tags-autocomplete');
+    if (!datalist) return;
+
+    const allTags = getAllTags();
+    datalist.innerHTML = allTags.map(tag => `<option value="${escapeHtml(tag)}"></option>`).join('');
+}
+
+function renderTagsDisplay(context) {
+    const displayId = context === 'filter' ? 'filter-tags-display' : 'create-tags-display';
+    const tagsArray = context === 'filter' ? state.filters.tags : state.createModalTags;
+    const displayEl = document.getElementById(displayId);
+
+    if (!displayEl) return;
+
+    displayEl.innerHTML = tagsArray.map(tag => `
+        <span class="tag-chip">
+            ${escapeHtml(tag)}
+            <span class="remove-tag" onclick="removeTag('${escapeHtml(tag)}', '${context}')">×</span>
+        </span>
+    `).join('');
+}
+
+function removeTag(tag, context) {
+    if (context === 'filter') {
+        state.filters.tags = state.filters.tags.filter(t => t !== tag);
+        renderTagsDisplay('filter');
+        refreshTree();
+        if (state.currentView === 'graph') {
+            loadGraph();
+        }
+    } else if (context === 'create') {
+        state.createModalTags = state.createModalTags.filter(t => t !== tag);
+        renderTagsDisplay('create');
+    }
+}
+
+function removeDetailTag(tag) {
+    if (!state.selectedNode) return;
+
+    // Update the current node's tags in memory
+    state.selectedNode.tags = (state.selectedNode.tags || []).filter(t => t !== tag);
+
+    // Re-render the tags display
+    const displayEl = document.getElementById('detail-tags-display');
+    if (displayEl) {
+        displayEl.innerHTML = (state.selectedNode.tags || []).map(t => `
+            <span class="tag-chip">
+                ${escapeHtml(t)}
+                <span class="remove-tag" onclick="removeDetailTag('${escapeHtml(t)}')">×</span>
+            </span>
+        `).join('');
+    }
+}
+
+function removePageTag(tag) {
+    if (!state.activeTab) return;
+    const tab = state.openTabs.find(t => t.id === state.activeTab);
+    if (!tab || !tab.node) return;
+
+    // Update the tab's node tags in memory
+    tab.node.tags = (tab.node.tags || []).filter(t => t !== tag);
+
+    // Re-render the tags display
+    const displayEl = document.getElementById('page-tags-display');
+    if (displayEl) {
+        displayEl.innerHTML = tab.node.tags.map(t => `
+            <span class="tag-chip">
+                ${escapeHtml(t)}
+                <span class="remove-tag" onclick="removePageTag('${escapeHtml(t)}')">×</span>
+            </span>
+        `).join('');
+    }
+}
+
+function renderMarkdown(content) {
+    if (!content) return '<p style="color: var(--text-secondary);">No content</p>';
+
     let html = escapeHtml(content);
-    html = html.replace(pattern, (match, title) => {
+
+    // Convert wiki links first (before other markdown)
+    html = html.replace(/\[\[([^\]]+)\]\]/g, (match, title) => {
         return `<a href="#" class="wiki-link" data-page="${escapeHtml(title)}">[[${escapeHtml(title)}]]</a>`;
     });
-    // Convert line breaks to paragraphs
-    html = html.split('\n\n').map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`).join('');
+
+    // Headers
+    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+    // Bold
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+
+    // Italic
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+
+    // Code blocks
+    html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // Unordered lists
+    html = html.replace(/^\* (.+)$/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gim, '<li>$1</li>');
+
+    // Line breaks and paragraphs
+    html = html.split('\n\n').map(para => {
+        if (para.startsWith('<h') || para.startsWith('<ul') || para.startsWith('<pre')) {
+            return para;
+        }
+        return `<p>${para.replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+
     return html;
+}
+
+function renderWikiLinks(content) {
+    // Backward compatibility - just use renderMarkdown
+    return renderMarkdown(content);
 }
 
 // Refresh functions
@@ -1318,6 +1773,7 @@ async function refreshTree() {
     const tree = await fetchTree();
     state.nodes = tree;
     renderTree(tree, document.getElementById('tree-container'));
+    updateTagsAutocomplete();
 }
 
 async function refreshAll() {

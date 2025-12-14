@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Text, Integer, Float, DateTime,
-    ForeignKey, Boolean, Index
+    ForeignKey, Boolean, Index, JSON
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -34,6 +34,7 @@ class Node(Base):
     status = Column(String(20), default="todo")  # 'todo' | 'in_progress' | 'done' | 'cancelled'
     priority = Column(Integer, default=3)  # 1 (highest) - 5 (lowest)
     due_date = Column(DateTime, nullable=True)
+    tags = Column(JSON, default=list)  # List of tag strings, inherited by subtasks/dependencies
     
     # Computed fields (updated by propagation logic)
     computed_priority = Column(Float, default=0.0)

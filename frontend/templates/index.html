@@ -27,14 +27,67 @@
             </div>
             
             <!-- Filters -->
-            <div class="filters">
-                <span class="filter-chip" data-filter-type="mode" data-filter-value="task">Tasks</span>
-                <span class="filter-chip" data-filter-type="mode" data-filter-value="note">Notes</span>
+            <div class="filter-section">
+                <h3 class="filter-section-title">MODE</h3>
+                <div class="filters">
+                    <span class="filter-chip" data-filter-type="mode" data-filter-value="task">Tasks</span>
+                    <span class="filter-chip" data-filter-type="mode" data-filter-value="note">Notes</span>
+                </div>
             </div>
-            <div class="filters">
-                <span class="filter-chip" data-filter-type="status" data-filter-value="todo">To Do</span>
-                <span class="filter-chip" data-filter-type="status" data-filter-value="in_progress">In Progress</span>
-                <span class="filter-chip" data-filter-type="status" data-filter-value="done">Done</span>
+
+            <div class="filter-section">
+                <h3 class="filter-section-title">STATUS</h3>
+                <div class="filters">
+                    <span class="filter-chip" data-filter-type="status" data-filter-value="todo">To Do</span>
+                    <span class="filter-chip" data-filter-type="status" data-filter-value="in_progress">In Progress</span>
+                    <span class="filter-chip" data-filter-type="status" data-filter-value="done">Done</span>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <h3 class="filter-section-title">PRIORITY</h3>
+                <div class="filters">
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="1">🔴 P1</span>
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="2">🟠 P2</span>
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="3">🟡 P3</span>
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="4">🟢 P4</span>
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="5">⚪ P5</span>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <h3 class="filter-section-title">TAGS</h3>
+                <div class="tags-input-container">
+                    <input type="text" id="filter-tags-input" list="tags-autocomplete" placeholder="Type a tag and press Enter...">
+                    <datalist id="tags-autocomplete"></datalist>
+                    <div id="filter-tags-display" class="tags-display"></div>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <h3 class="filter-section-title">DUE DATE</h3>
+                <div style="padding: 8px 0;">
+                    <input type="date" id="filter-date-from" class="filter-date-input" placeholder="From">
+                    <input type="date" id="filter-date-to" class="filter-date-input" placeholder="To" style="margin-top: 8px;">
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <h3 class="filter-section-title">OPTIONS</h3>
+                <div class="filter-checkboxes">
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="filter-show-subtasks">
+                        <span>Show Full DAG (Subtasks)</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="filter-show-dependencies">
+                        <span>Show Dependencies</span>
+                    </label>
+                    <label class="filter-checkbox" id="filter-show-completed-roots">
+                        <input type="checkbox" id="filter-show-completed">
+                        <span>Show Completed Root Tasks</span>
+                    </label>
+                </div>
             </div>
             
             <!-- Quick Stats -->
@@ -146,10 +199,18 @@
                 </div>
                 
                 <div class="form-group">
+                    <label>Tags</label>
+                    <div class="tags-input-container">
+                        <input type="text" id="create-tags-input" list="tags-autocomplete" placeholder="Type a tag and press Enter...">
+                        <div id="create-tags-display" class="tags-display"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label>Content (Markdown)</label>
                     <textarea id="create-content" placeholder="Add notes or details..."></textarea>
                 </div>
-                
+
                 <input type="hidden" id="create-mode" value="task">
                 <input type="hidden" id="create-parent" value="">
                 
@@ -170,24 +231,29 @@
             document.getElementById('create-mode').value = mode;
             document.getElementById('create-parent').value = parentId || '';
             document.getElementById('task-fields').style.display = mode === 'task' ? 'block' : 'none';
+            state.createModalTags = [];
+            renderTagsDisplay('create');
             document.getElementById('create-title').focus();
         }
-        
+
         function hideCreateModal() {
             document.getElementById('create-modal').style.display = 'none';
             document.getElementById('create-form').reset();
+            state.createModalTags = [];
+            renderTagsDisplay('create');
         }
         
         document.getElementById('create-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const data = {
                 title: document.getElementById('create-title').value,
                 mode: document.getElementById('create-mode').value,
                 content: document.getElementById('create-content').value,
+                tags: state.createModalTags,
                 parent_id: document.getElementById('create-parent').value || null
             };
-            
+
             if (data.mode === 'task') {
                 data.priority = parseInt(document.getElementById('create-priority').value);
                 const dueValue = document.getElementById('create-due').value;
@@ -195,7 +261,7 @@
                     data.due_date = new Date(dueValue).toISOString();
                 }
             }
-            
+
             await createNode(data);
             hideCreateModal();
             await refreshAll();

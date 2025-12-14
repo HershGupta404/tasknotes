@@ -95,6 +95,8 @@ def get_graph(db: Session = Depends(get_db)):
             "status": node.status,
             "priority": node.priority,
             "parent_id": node.parent_id,
+            "due_date": node.due_date.isoformat() if node.due_date else None,
+            "tags": node.tags or [],
             "size": size,
             "is_root": node.parent_id is None and node.mode == 'task'
         })
@@ -192,12 +194,16 @@ def create_node(node: NodeCreate, db: Session = Depends(get_db)):
     """Create a new node."""
     from ..models import Node
     from ..services.due_date_service import propagate_all_due_dates
+    from ..services.tag_service import propagate_all_tags
 
     created = node_service.create_node(db, node)
 
     # Propagate due dates if this is a task
     if created.mode == 'task':
         propagate_all_due_dates(db, created)
+
+    # Propagate tags (for both tasks and notes)
+    propagate_all_tags(db, created)
 
     created.children_count = db.query(Node).filter(Node.parent_id == created.id).count()
     return created
@@ -208,6 +214,7 @@ def update_node(node_id: str, updates: NodeUpdate, db: Session = Depends(get_db)
     """Update a node."""
     from ..models import Node
     from ..services.due_date_service import propagate_all_due_dates
+    from ..services.tag_service import propagate_all_tags
 
     node = node_service.update_node(db, node_id, updates)
     if not node:
@@ -216,6 +223,10 @@ def update_node(node_id: str, updates: NodeUpdate, db: Session = Depends(get_db)
     # Propagate due dates if this is a task and due_date was updated
     if node.mode == 'task' and updates.due_date is not None:
         propagate_all_due_dates(db, node)
+
+    # Propagate tags if tags were updated
+    if updates.tags is not None:
+        propagate_all_tags(db, node)
 
     node.children_count = db.query(Node).filter(Node.parent_id == node.id).count()
     return node
@@ -304,6 +315,7 @@ def get_dependencies(node_id: str, db: Session = Depends(get_db)):
 def create_link(link: LinkCreate, db: Session = Depends(get_db)):
     """Create a link between nodes."""
     from ..services.due_date_service import propagate_dependency_due_dates
+    from ..services.tag_service import propagate_dependency_tags
 
     created = node_service.create_link(db, link.source_id, link.target_id, link.link_type)
     if not created:
@@ -314,6 +326,11 @@ def create_link(link: LinkCreate, db: Session = Depends(get_db)):
         source_node = node_service.get_node(db, link.source_id)
         if source_node and source_node.mode == 'task':
             propagate_dependency_due_dates(db, source_node)
+
+    # Propagate tags for both dependency and wiki links
+    source_node = node_service.get_node(db, link.source_id)
+    if source_node:
+        propagate_dependency_tags(db, source_node)
 
     return created
 

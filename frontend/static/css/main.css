@@ -165,25 +165,116 @@ textarea {
 }
 
 /* Filters */
+.filter-section {
+    margin-bottom: 20px;
+}
+
+.filter-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+
 .filters {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 6px;
     flex-wrap: wrap;
 }
 
 .filter-chip {
-    padding: 4px 12px;
-    background: var(--bg-tertiary);
-    border-radius: 20px;
-    font-size: 0.8rem;
+    padding: 6px 12px;
+    background: var(--bg-primary);
+    border-radius: 16px;
+    font-size: 0.85rem;
     cursor: pointer;
     border: 1px solid transparent;
+    transition: all 0.2s;
 }
 
 .filter-chip:hover, .filter-chip.active {
     border-color: var(--accent);
     color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+.filter-date-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.filter-date-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.filter-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.filter-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+
+.filter-checkbox:hover span {
+    color: var(--accent);
+}
+
+/* Tags */
+.tags-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tags-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 24px;
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    font-size: 0.8rem;
+    color: var(--accent);
+}
+
+.tag-chip .remove-tag {
+    cursor: pointer;
+    font-weight: bold;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.tag-chip .remove-tag:hover {
+    opacity: 1;
 }
 
 /* Tree View */

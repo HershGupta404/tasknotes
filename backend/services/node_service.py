@@ -18,11 +18,11 @@ def get_node(db: Session, node_id: str) -> Optional[Node]:
 def get_nodes(db: Session, filters: FilterParams) -> List[Node]:
     """Get nodes with filtering and sorting."""
     query = db.query(Node)
-    
+
     # Filter by parent (None = root nodes)
     if filters.parent_id != "all":
         query = query.filter(Node.parent_id == filters.parent_id)
-    
+
     # Apply filters
     if filters.mode:
         query = query.filter(Node.mode == filters.mode)
@@ -35,14 +35,29 @@ def get_nodes(db: Session, filters: FilterParams) -> List[Node]:
             query = query.filter(Node.due_date.isnot(None))
         else:
             query = query.filter(Node.due_date.is_(None))
-    
+
+    # Filter by tags (node must have at least ONE of the specified tags)
+    if filters.tags and len(filters.tags) > 0:
+        nodes = query.all()
+        filtered_nodes = []
+        for node in nodes:
+            node_tags = set(node.tags or [])
+            required_tags = set(filters.tags)
+            if required_tags.intersection(node_tags):
+                filtered_nodes.append(node)
+
+        # Sort the filtered list
+        sort_key = lambda n: getattr(n, filters.sort_by, n.position)
+        filtered_nodes.sort(key=sort_key, reverse=filters.sort_desc)
+        return filtered_nodes
+
     # Sort
     sort_col = getattr(Node, filters.sort_by, Node.position)
     if filters.sort_desc:
         query = query.order_by(sort_col.desc())
     else:
         query = query.order_by(sort_col.asc())
-    
+
     return query.all()
 
 
@@ -70,6 +85,7 @@ def build_tree(db: Session, parent_id: Optional[str] = None) -> List[dict]:
             "status": node.status,
             "priority": node.priority,
             "due_date": node.due_date,
+            "tags": node.tags or [],
             "computed_priority": node.computed_priority,
             "computed_due": node.computed_due,
             "position": node.position,
@@ -88,7 +104,7 @@ def create_node(db: Session, node_data: NodeCreate) -> Node:
     max_pos = db.query(func.max(Node.position)).filter(
         Node.parent_id == node_data.parent_id
     ).scalar() or -1
-    
+
     node = Node(
         title=node_data.title,
         content=node_data.content,
@@ -96,17 +112,18 @@ def create_node(db: Session, node_data: NodeCreate) -> Node:
         status=node_data.status,
         priority=node_data.priority,
         due_date=node_data.due_date,
+        tags=node_data.tags or [],
         parent_id=node_data.parent_id,
         position=max_pos + 1
     )
-    
+
     # Calculate initial priority
     node.computed_priority = compute_node_priority(node, 0)
-    
+
     db.add(node)
     db.commit()
     db.refresh(node)
-    
+
     # Save to markdown file
     save_node_to_file(node)
 
