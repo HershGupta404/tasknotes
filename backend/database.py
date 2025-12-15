@@ -8,11 +8,13 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DB_PATH = DATA_DIR / "tasknotes.db"
 NODES_DIR = DATA_DIR / "nodes"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
+ARCHIVE_DIR = DATA_DIR / "archived"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 NODES_DIR.mkdir(exist_ok=True)
 ATTACHMENTS_DIR.mkdir(exist_ok=True)
+ARCHIVE_DIR.mkdir(exist_ok=True)
 
 # SQLite with FTS5 support
 engine = create_engine(

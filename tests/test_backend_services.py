@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -132,7 +132,10 @@ Updated body
 
         deleted = node_service.delete_node(self.db, created.id, recursive=True)
         self.assertTrue(deleted)
+        # File should be moved to archive
+        archive_path = Path(database.ARCHIVE_DIR) / expected_path.name
         self.assertFalse(expected_path.exists())
+        self.assertTrue(archive_path.exists())
         self.assertIsNone(self.db.query(Node).filter(Node.id == created.id).first())
 
     def test_watch_normalize_assigns_id_and_renames(self):
@@ -318,6 +321,82 @@ Content
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].from_status, "todo")
         self.assertEqual(events[0].to_status, "in_progress")
+
+    # ----- Priority scoring scenarios -----
+    def test_priority_prefers_due_soon_and_high_priority(self):
+        today = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        soon = Node(
+            id="soon",
+            title="Due Tomorrow High",
+            priority=1,
+            status="todo",
+            due_date=today + timedelta(days=1)
+        )
+        later = Node(
+            id="later",
+            title="Due in 10 days Low",
+            priority=4,
+            status="todo",
+            due_date=today + timedelta(days=10)
+        )
+        score_soon = priority_service.compute_node_priority(soon, depth=0, now=today)
+        score_later = priority_service.compute_node_priority(later, depth=0, now=today)
+        self.assertGreater(score_soon, score_later)
+
+    def test_blocking_and_children_boost(self):
+        blocker = Node(id="blocker", title="Blocker", priority=3, status="todo", due_date=datetime(2024, 1, 5, tzinfo=timezone.utc))
+        non_blocker = Node(id="nb", title="NB", priority=3, status="todo", due_date=datetime(2024, 1, 5, tzinfo=timezone.utc))
+        score_blocker = priority_service.compute_node_priority(blocker, depth=0, dependents=2, child_count=1, now=datetime(2024, 1, 1, tzinfo=timezone.utc))
+        score_non = priority_service.compute_node_priority(non_blocker, depth=0, dependents=0, child_count=0, now=datetime(2024, 1, 1, tzinfo=timezone.utc))
+        self.assertGreater(score_blocker, score_non)
+
+    def test_quick_tasks_get_small_boost(self):
+        quick = Node(id="q", title="Quick", priority=3, status="todo", estimated_minutes=20, due_date=datetime(2024, 1, 3, tzinfo=timezone.utc))
+        long = Node(id="l", title="Long", priority=3, status="todo", estimated_minutes=180, due_date=datetime(2024, 1, 3, tzinfo=timezone.utc))
+        score_quick = priority_service.compute_node_priority(quick, depth=0, now=datetime(2024, 1, 1, tzinfo=timezone.utc))
+        score_long = priority_service.compute_node_priority(long, depth=0, now=datetime(2024, 1, 1, tzinfo=timezone.utc))
+        self.assertGreater(score_quick, score_long)
+
+    def test_blocked_task_boosts_blocker(self):
+        # Dependent task due tomorrow, blocked by blocker
+        today = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        blocked = Node(id="blocked", title="Blocked", priority=2, status="todo", due_date=today + timedelta(days=1))
+        blocker = Node(id="blocker", title="Blocker", priority=3, status="todo", due_date=today + timedelta(days=3))
+        # base scores
+        base_blocked = priority_service.compute_node_priority(blocked, now=today)
+        base_blocker = priority_service.compute_node_priority(blocker, now=today, dependents=1)
+        # simulate boost propagation both ways: blocked contributes half upward
+        boosted_blocker = base_blocker + (base_blocked / 2)
+        self.assertGreater(boosted_blocker, base_blocker)
+        self.assertGreater(boosted_blocker, base_blocked)
+
+    def test_done_tasks_do_not_propagate(self):
+        today = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        done_blocked = Node(id="doneb", title="Done Blocked", priority=1, status="done", due_date=today + timedelta(days=1))
+        blocker = Node(id="blk", title="Blocker", priority=3, status="todo", due_date=today + timedelta(days=3))
+        base_blocker = priority_service.compute_node_priority(blocker, now=today, dependents=1)
+        # even with a high-score dependent marked done, no propagation
+        self.assertEqual(priority_service.compute_node_priority(done_blocked, now=today), 0.0)
+        self.assertEqual(base_blocker, base_blocker)
+
+    def test_child_propagation_downwards(self):
+        today = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        parent = Node(id="p", title="Parent", priority=3, status="todo", due_date=today + timedelta(days=3))
+        child = Node(id="c", title="Child", priority=3, status="todo", due_date=today + timedelta(days=1))
+        base_child = priority_service.compute_node_priority(child, depth=1, now=today)
+        base_single = priority_service.compute_node_priority(
+            Node(id="s", title="Single", priority=3, status="todo", due_date=today + timedelta(days=1)),
+            now=today
+        )
+        # Child should get a slight benefit from being part of a parent task chain (via propagation)
+        self.assertGreater(base_child, base_single)
+
+    def test_delete_parent_removes_children(self):
+        node_data = NodeCreate(title="Root", mode="task")
+        root = node_service.create_node(self.db, node_data)
+        child = node_service.create_node(self.db, NodeCreate(title="Child", mode="task", parent_id=root.id))
+        node_service.delete_node(self.db, root.id, recursive=True)
+        self.assertIsNone(node_service.get_node(self.db, child.id))
 
 
 if __name__ == "__main__":

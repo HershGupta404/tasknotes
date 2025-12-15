@@ -589,6 +589,7 @@ function switchView(viewName) {
     document.getElementById('tree-view').style.display = viewName === 'tree' ? 'block' : 'none';
     document.getElementById('page-view').style.display = viewName === 'page' ? 'block' : 'none';
     document.getElementById('graph-view').style.display = viewName === 'graph' ? 'block' : 'none';
+    document.getElementById('priority-view').style.display = viewName === 'priority' ? 'block' : 'none';
 
     // Load graph if switching to graph view
     if (viewName === 'graph') {
@@ -672,37 +673,56 @@ async function renderPageView() {
                     <input type="text" class="page-title-input" id="page-title" value="${escapeHtml(node.title)}" placeholder="Page title...">
 
                     <div class="page-metadata">
-                        <div class="page-metadata-item">
-                            <span>📝</span>
-                            <select id="page-mode" class="btn-ghost" style="padding: 4px 8px;">
-                                <option value="note" ${node.mode === 'note' ? 'selected' : ''}>Note</option>
-                                <option value="task" ${node.mode === 'task' ? 'selected' : ''}>Task</option>
-                            </select>
-                        </div>
-                        ${node.mode === 'task' ? `
-                        <div class="page-metadata-item">
-                            <span>📊</span>
-                            <select id="page-status" style="padding: 4px 8px;">
-                                <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
-                                <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-                                <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
-                            </select>
-                        </div>
-                        <div class="page-metadata-item">
-                            <span>🔥</span>
-                            <select id="page-priority" style="padding: 4px 8px;">
-                                <option value="1" ${node.priority === 1 ? 'selected' : ''}>Urgent</option>
-                                <option value="2" ${node.priority === 2 ? 'selected' : ''}>High</option>
-                                <option value="3" ${node.priority === 3 ? 'selected' : ''}>Medium</option>
-                                <option value="4" ${node.priority === 4 ? 'selected' : ''}>Low</option>
-                                <option value="5" ${node.priority === 5 ? 'selected' : ''}>Someday</option>
-                            </select>
-                        </div>
-                        ` : ''}
-                        <div class="page-metadata-item">
-                            <button class="btn btn-primary btn-sm" id="save-page-btn">💾 Save</button>
-                        </div>
+                    <div class="page-metadata-item">
+                        <span>📝</span>
+                        <select id="page-mode" class="btn-ghost" style="padding: 4px 8px;">
+                            <option value="note" ${node.mode === 'note' ? 'selected' : ''}>Note</option>
+                            <option value="task" ${node.mode === 'task' ? 'selected' : ''}>Task</option>
+                        </select>
                     </div>
+                    ${node.mode === 'task' ? `
+                    <div class="page-metadata-item">
+                        <span>📊</span>
+                        <select id="page-status" style="padding: 4px 8px;">
+                            <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
+                            <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                            <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
+                        </select>
+                    </div>
+                    <div class="page-metadata-item">
+                        <span>🔥</span>
+                        <select id="page-priority" style="padding: 4px 8px;">
+                            <option value="1" ${node.priority === 1 ? 'selected' : ''}>🔴 Urgent</option>
+                            <option value="2" ${node.priority === 2 ? 'selected' : ''}>🟠 High</option>
+                            <option value="3" ${node.priority === 3 ? 'selected' : ''}>🟡 Medium</option>
+                            <option value="4" ${node.priority === 4 ? 'selected' : ''}>🟢 Low</option>
+                            <option value="5" ${node.priority === 5 ? 'selected' : ''}>🧹 Chore (Daily)</option>
+                        </select>
+                    </div>
+                    <div class="page-metadata-item">
+                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Est. min</label>
+                        <input type="number" id="page-estimate" min="0" style="width: 90px; padding: 4px 6px;" value="${node.estimated_minutes || ''}">
+                    </div>
+                    <div class="page-metadata-item">
+                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Actual min</label>
+                        <input type="number" id="page-actual" min="0" style="width: 90px; padding: 4px 6px;" value="${node.actual_minutes || ''}">
+                    </div>
+                    <div class="page-metadata-item">
+                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Difficulty</label>
+                        <select id="page-difficulty" style="padding: 4px 8px;">
+                            <option value="1" ${node.difficulty === 1 ? 'selected' : ''}>1</option>
+                            <option value="2" ${node.difficulty === 2 ? 'selected' : ''}>2</option>
+                            <option value="3" ${(!node.difficulty || node.difficulty === 3) ? 'selected' : ''}>3</option>
+                            <option value="4" ${node.difficulty === 4 ? 'selected' : ''}>4</option>
+                            <option value="5" ${node.difficulty === 5 ? 'selected' : ''}>5</option>
+                        </select>
+                    </div>
+                    ` : ''}
+                    <div class="page-metadata-item">
+                        <button class="btn btn-primary btn-sm" id="save-page-btn">💾 Save</button>
+                        <button class="btn btn-ghost btn-sm" id="delete-page-btn" style="color: var(--danger);">🗑 Delete</button>
+                    </div>
+                </div>
 
                     <div class="form-group" style="margin-top: 16px;">
                         <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Tags</label>
@@ -783,12 +803,33 @@ async function renderPageView() {
                 if (node.mode === 'task') {
                     updates.status = document.getElementById('page-status')?.value;
                     updates.priority = parseInt(document.getElementById('page-priority')?.value);
+                    const estVal = parseInt(document.getElementById('page-estimate')?.value, 10);
+                    if (!isNaN(estVal)) updates.estimated_minutes = estVal;
+                    const actVal = parseInt(document.getElementById('page-actual')?.value, 10);
+                    if (!isNaN(actVal)) updates.actual_minutes = actVal;
+                    const diffVal = parseInt(document.getElementById('page-difficulty')?.value, 10);
+                    if (!isNaN(diffVal)) updates.difficulty = diffVal;
                 }
 
                 await updateNode(node.id, updates);
                 tab.title = updates.title;
                 await renderPageView();
                 await refreshTree();
+            });
+
+            document.getElementById('delete-page-btn')?.addEventListener('click', async () => {
+                const confirmDelete = confirm('Delete this node? Its markdown will be moved to archived.');
+                if (!confirmDelete) return;
+                await deleteNode(node.id);
+                closeTab(node.id);
+                state.selectedNode = null;
+                await refreshTree();
+                pageContent.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Deleted</h3>
+                        <p>The node has been removed and archived.</p>
+                    </div>
+                `;
             });
 
             // Setup backlink handlers
@@ -898,16 +939,19 @@ async function loadPriorityView() {
     try {
         const res = await fetch(`${API_BASE}?parent_id=all&mode=task`);
         const tasks = await res.json();
-        const nowMs = getNowMsInTz(state.timezoneOffsetMinutes);
+        const nowMs = Date.now();
         const horizonMs = nowMs + 14 * 24 * 60 * 60 * 1000;
 
         const dueSoon = tasks.filter(t => {
-            if (!t.due_date) return false;
-            const dueMs = getMsInTz(t.due_date, state.timezoneOffsetMinutes);
+            const dueRef = t.due_date || t.computed_due;
+            if (!dueRef) return false;
+            const dueMs = getMsInTz(dueRef, state.timezoneOffsetMinutes);
+            if (Number.isNaN(dueMs)) return false;
             return dueMs <= horizonMs;
         });
 
-        const sorted = dueSoon.sort((a, b) => (b.computed_priority || 0) - (a.computed_priority || 0));
+        const filtered = dueSoon.filter(t => t.status !== 'done');
+        const sorted = filtered.sort((a, b) => (b.computed_priority || 0) - (a.computed_priority || 0));
         const chores = sorted.filter(t => t.priority === 5);
         const main = sorted.filter(t => t.priority !== 5);
 
@@ -917,16 +961,16 @@ async function loadPriorityView() {
             }
             return items.map(t => `
                 <div class="priority-card" data-id="${t.id}">
-                    <div class="priority-card-header">
-                        <div class="priority-card-title">${escapeHtml(t.title)}</div>
-                        <div class="priority-card-score">${(t.computed_priority || 0).toFixed(1)}</div>
+                        <div class="priority-card-header">
+                            <div class="priority-card-title">${escapeHtml(t.title)}</div>
+                            <div class="priority-card-score">${(t.computed_priority || 0).toFixed(1)}</div>
+                        </div>
+                        <div class="priority-card-meta">
+                            <span class="priority-card-label">${getPriorityLabel(t.priority)}</span>
+                        ${t.due_date ? renderDueBadge(t.due_date) : (t.computed_due ? renderDueBadge(t.computed_due) : '<span class="node-badge badge-note">No due date</span>')}
+                            <span class="node-badge badge-${t.status}">${t.status}</span>
+                        </div>
                     </div>
-                    <div class="priority-card-meta">
-                        <span class="priority-card-label">${getPriorityLabel(t.priority)}</span>
-                        ${t.due_date ? renderDueBadge(t.due_date) : '<span class="node-badge badge-note">No due date</span>'}
-                        <span class="node-badge badge-${t.status}">${t.status}</span>
-                    </div>
-                </div>
             `).join('');
         };
 

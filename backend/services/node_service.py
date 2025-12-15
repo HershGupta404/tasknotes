@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
 from ..models import Node, NodeLink, WorkSession, CompletionEvent
+from .. import database
 from ..schemas import NodeCreate, NodeUpdate, FilterParams
 from .sync_service import save_node_to_file
 from .priority_service import propagate_node_changes, compute_node_priority
@@ -211,11 +212,12 @@ def delete_node(db: Session, node_id: str, recursive: bool = True) -> bool:
     db.query(CompletionEvent).filter(CompletionEvent.node_id == node_id).delete()
     
     # Delete markdown file
-    from ..database import NODES_DIR
     if node.md_filename:
-        md_path = NODES_DIR / node.md_filename
+        md_path = database.NODES_DIR / node.md_filename
         if md_path.exists():
-            md_path.unlink()
+            database.ARCHIVE_DIR.mkdir(exist_ok=True, parents=True)
+            archive_path = database.ARCHIVE_DIR / node.md_filename
+            md_path.replace(archive_path)
     
     db.delete(node)
     db.commit()

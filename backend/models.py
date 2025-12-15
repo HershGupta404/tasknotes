@@ -65,7 +65,9 @@ class Node(Base):
         backref="parent",
         remote_side=[id],
         foreign_keys=[parent_id],
-        lazy="selectin"
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        single_parent=True
     )
     
     # Index for full-text search on title and content

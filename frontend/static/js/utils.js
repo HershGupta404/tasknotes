@@ -27,17 +27,18 @@ function formatOffsetLabel(minutes) {
 }
 
 function getNowMsInTz(offsetMinutes) {
-    return Date.now() + offsetMinutes * 60 * 1000;
+    // Dates are stored with timezone info; avoid double-shifting. Offset is for display only.
+    return Date.now();
 }
 
 function getMsInTz(dateStr, offsetMinutes) {
-    const base = new Date(dateStr).getTime();
-    return base + offsetMinutes * 60 * 1000;
+    // Respect stored timezone in the string; do not adjust again.
+    return new Date(dateStr).getTime();
 }
 
 function formatDateForTz(dateStr, offsetMinutes) {
-    const ms = getMsInTz(dateStr, offsetMinutes);
-    return new Date(ms).toISOString().slice(0, 10);
+    const d = new Date(dateStr);
+    return d.toLocaleDateString();
 }
 
 function getPriorityLabel(priority) {
