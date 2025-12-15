@@ -15,6 +15,8 @@ from backend.services import (
     watch_service,
     due_date_service,
     priority_service,
+    session_service,
+    event_service,
 )
 from backend.models import NodeLink
 from backend import timezone_service
@@ -296,6 +298,26 @@ Content
         changed = due_date_service.ensure_chore_due_date(chore, now=now)
         self.assertFalse(changed)
         self.assertIsNone(chore.due_date)
+
+    # ----- Sessions and events -----
+    def test_create_and_list_work_sessions(self):
+        node_data = NodeCreate(title="Session Task", mode="task")
+        node = node_service.create_node(self.db, node_data)
+        start = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        end = datetime(2024, 1, 1, 11, tzinfo=timezone.utc)
+        session = session_service.create_session(self.db, node.id, start, end, "Deep work")
+        self.assertEqual(session.duration_minutes, 60)
+        sessions = session_service.list_sessions(self.db, node.id)
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0].note, "Deep work")
+
+    def test_status_change_logs_event(self):
+        node = node_service.create_node(self.db, NodeCreate(title="Log Task"))
+        node_service.update_node(self.db, node.id, NodeUpdate(status="in_progress"))
+        events = event_service.list_events(self.db, node.id)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].from_status, "todo")
+        self.assertEqual(events[0].to_status, "in_progress")
 
 
 if __name__ == "__main__":

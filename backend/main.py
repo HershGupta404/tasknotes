@@ -31,6 +31,7 @@ app.include_router(nodes.router)
 @app.on_event("startup")
 async def startup_event():
     """Sync from markdown files on startup."""
+    Base.metadata.create_all(bind=engine)
     ensure_additional_columns()
     db = SessionLocal()
     try:

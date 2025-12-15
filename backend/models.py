@@ -114,3 +114,41 @@ class Attachment(Base):
     created_at = Column(DateTime, default=utc_now)
     
     node = relationship("Node", backref="attachments")
+
+
+class WorkSession(Base):
+    """Time tracking sessions for nodes."""
+    __tablename__ = "work_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    node_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
+    started_at = Column(DateTime, default=utc_now)
+    ended_at = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, default=0)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=utc_now)
+
+    node = relationship("Node", backref="work_sessions")
+
+    __table_args__ = (
+        Index("idx_session_node", "node_id"),
+        Index("idx_session_started_at", "started_at"),
+    )
+
+
+class CompletionEvent(Base):
+    """Status transition log for nodes."""
+    __tablename__ = "completion_events"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    node_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
+    from_status = Column(String(20))
+    to_status = Column(String(20))
+    occurred_at = Column(DateTime, default=utc_now)
+
+    node = relationship("Node", backref="completion_events")
+
+    __table_args__ = (
+        Index("idx_event_node", "node_id"),
+        Index("idx_event_time", "occurred_at"),
+    )

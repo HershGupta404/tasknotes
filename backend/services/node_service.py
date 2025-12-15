@@ -3,11 +3,12 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
-from ..models import Node, NodeLink
+from ..models import Node, NodeLink, WorkSession, CompletionEvent
 from ..schemas import NodeCreate, NodeUpdate, FilterParams
 from .sync_service import save_node_to_file
 from .priority_service import propagate_node_changes, compute_node_priority
 from .due_date_service import ensure_chore_due_date
+from .event_service import log_status_change
 from ..timezone_service import get_timezone_offset_minutes
 from .link_parser import sync_wiki_links, get_backlinks
 
@@ -152,6 +153,8 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     if not node:
         return None
     
+    previous_status = node.status
+
     # Apply updates
     update_data = updates.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -169,6 +172,10 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     # Sync wiki links if content changed
     if 'content' in update_data:
         sync_wiki_links(db, node)
+
+    # Log status change
+    if 'status' in update_data and update_data['status'] != previous_status:
+        log_status_change(db, node.id, previous_status, update_data['status'])
 
     # Propagate and save
     propagate_node_changes(db, node)
@@ -198,6 +205,10 @@ def delete_node(db: Session, node_id: str, recursive: bool = True) -> bool:
     db.query(NodeLink).filter(
         or_(NodeLink.source_id == node_id, NodeLink.target_id == node_id)
     ).delete()
+
+    # Delete sessions and events
+    db.query(WorkSession).filter(WorkSession.node_id == node_id).delete()
+    db.query(CompletionEvent).filter(CompletionEvent.node_id == node_id).delete()
     
     # Delete markdown file
     from ..database import NODES_DIR

@@ -9,6 +9,7 @@ from ..schemas import (
     LinkCreate, LinkResponse
 )
 from ..services import node_service
+from ..services import session_service, event_service
 from ..services.priority_service import update_all_priorities
 from ..timezone_service import (
     get_timezone_offset_minutes,
@@ -165,6 +166,32 @@ def set_timezone(offset_minutes: int = Body(..., embed=True), db: Session = Depe
     set_timezone_offset_minutes(offset_minutes)
     count = update_all_priorities(db)
     return {"status": "ok", "offset_minutes": offset_minutes, "updated": count}
+
+
+@router.get("/{node_id}/sessions")
+def get_sessions(node_id: str, db: Session = Depends(get_db)):
+    """List work sessions for a node."""
+    return session_service.list_sessions(db, node_id)
+
+
+@router.post("/{node_id}/sessions")
+def add_session(
+    node_id: str,
+    started_at: Optional[str] = Body(None),
+    ended_at: Optional[str] = Body(None),
+    note: str = Body("", embed=True),
+    db: Session = Depends(get_db)
+):
+    """Create a work session for a node."""
+    start_dt = datetime.fromisoformat(started_at) if started_at else None
+    end_dt = datetime.fromisoformat(ended_at) if ended_at else None
+    return session_service.create_session(db, node_id, start_dt, end_dt, note)
+
+
+@router.get("/{node_id}/events")
+def get_events(node_id: str, db: Session = Depends(get_db)):
+    """List completion/status change events for a node."""
+    return event_service.list_events(db, node_id)
 
 
 @router.get("/search")
