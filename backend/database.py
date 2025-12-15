@@ -44,7 +44,7 @@ def ensure_additional_columns():
         "difficulty": "INTEGER DEFAULT 3",
     }
     with engine.begin() as conn:
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
+        existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(nodes)")}
         for col, ddl in desired.items():
             if col not in existing:
-                conn.execute(f"ALTER TABLE nodes ADD COLUMN {col} {ddl}")
+                conn.exec_driver_sql(f"ALTER TABLE nodes ADD COLUMN {col} {ddl}")
