@@ -287,7 +287,8 @@ Content
     def test_timezone_service_roundtrip(self):
         timezone_service.set_timezone_offset_minutes(-300)
         self.assertEqual(timezone_service.get_timezone_offset_minutes(), -300)
-        self.assertEqual(timezone_service.get_timezone().utcoffset().total_seconds(), -300 * 60)
+        tz = timezone_service.get_timezone()
+        self.assertEqual(datetime.now(tz).utcoffset().total_seconds(), -300 * 60)
 
 
 if __name__ == "__main__":
