@@ -290,6 +290,13 @@ Content
         tz = timezone_service.get_timezone()
         self.assertEqual(datetime.now(tz).utcoffset().total_seconds(), -300 * 60)
 
+    def test_chore_due_not_changed_if_done(self):
+        now = datetime(2024, 1, 1, 10, tzinfo=timezone.utc)
+        chore = Node(id="chore4", title="Done chore", mode="task", priority=5, status="done")
+        changed = due_date_service.ensure_chore_due_date(chore, now=now)
+        self.assertFalse(changed)
+        self.assertIsNone(chore.due_date)
+
 
 if __name__ == "__main__":
     unittest.main()

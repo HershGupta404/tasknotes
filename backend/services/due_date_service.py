@@ -15,7 +15,7 @@ def ensure_chore_due_date(node: Node, now: Optional[datetime] = None) -> bool:
     Ensure priority-5 "chore" tasks always have a due date at end of current day.
     Returns True if the due date was modified.
     """
-    if node.mode != "task" or node.priority != 5:
+    if node.mode != "task" or node.priority != 5 or node.status == "done":
         return False
 
     tz = get_timezone()
@@ -44,8 +44,8 @@ def ensure_chore_due_date(node: Node, now: Optional[datetime] = None) -> bool:
         else:
             existing_due = existing_due.astimezone(tz)
 
-    # If missing due date or not aligned to today, set it
-    if (not existing_due) or (existing_due.date() != target.date()):
+    # Only update if missing, or if overdue relative to today in the configured TZ
+    if (not existing_due) or (existing_due.date() < target.date()):
         node.due_date = target
         return True
     return False

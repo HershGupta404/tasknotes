@@ -105,11 +105,11 @@ function renderNode(node, depth = 0) {
 }
 
 function renderDueBadge(dueDateStr) {
-    const dueMs = getMsInTz(dueDateStr);
-    const nowMs = getNowMsInTz();
+    const dueMs = getMsInTz(dueDateStr, state.timezoneOffsetMinutes);
+    const nowMs = getNowMsInTz(state.timezoneOffsetMinutes);
     const diffDays = Math.ceil((dueMs - nowMs) / (1000 * 60 * 60 * 24));
 
-    let label = formatDateForTz(dueDateStr);
+    let label = formatDateForTz(dueDateStr, state.timezoneOffsetMinutes);
     let className = 'badge-due';
 
     if (diffDays < 0) {
@@ -473,7 +473,7 @@ function matchesFiltersBase(node) {
         if (node.mode !== 'task') return false;
         if (!node.due_date) return false;
 
-        const dueMs = getMsInTz(node.due_date);
+        const dueMs = getMsInTz(node.due_date, state.timezoneOffsetMinutes);
         if (state.filters.dateFrom) {
             const from = new Date(state.filters.dateFrom).getTime();
             if (dueMs < from) return false;
@@ -879,12 +879,12 @@ async function loadPriorityView() {
     try {
         const res = await fetch(`${API_BASE}?parent_id=all&mode=task`);
         const tasks = await res.json();
-        const nowMs = getNowMsInTz();
+        const nowMs = getNowMsInTz(state.timezoneOffsetMinutes);
         const horizonMs = nowMs + 14 * 24 * 60 * 60 * 1000;
 
         const dueSoon = tasks.filter(t => {
             if (!t.due_date) return false;
-            const dueMs = getMsInTz(t.due_date);
+            const dueMs = getMsInTz(t.due_date, state.timezoneOffsetMinutes);
             return dueMs <= horizonMs;
         });
 
@@ -1057,8 +1057,8 @@ function renderGraph(graphData) {
     const totalNodes = graphData.nodes.length;
 
     // Make sure root nodes stay visually dominant
-    const ROOT_NODE_BASE_SIZE = 36;
-    const NOTE_NODE_SIZE = ROOT_NODE_BASE_SIZE / 3;
+    const ROOT_NODE_BASE_SIZE = CONSTANTS.ROOT_NODE_BASE_SIZE;
+    const NOTE_NODE_SIZE = CONSTANTS.NOTE_NODE_SIZE || (CONSTANTS.ROOT_NODE_BASE_SIZE / 3);
     graphData.nodes.forEach(node => {
         if (node.mode === 'note') {
             node.size = NOTE_NODE_SIZE;
@@ -1677,28 +1677,6 @@ function setupEventListeners() {
             }
         }
     });
-}
-
-function formatOffsetLabel(minutes) {
-    const sign = minutes >= 0 ? '+' : '-';
-    const abs = Math.abs(minutes);
-    const hours = Math.floor(abs / 60).toString().padStart(2, '0');
-    const mins = (abs % 60).toString().padStart(2, '0');
-    return `UTC${sign}${hours}:${mins}`;
-}
-
-function getNowMsInTz() {
-    return Date.now() + state.timezoneOffsetMinutes * 60 * 1000;
-}
-
-function getMsInTz(dateStr) {
-    const base = new Date(dateStr).getTime();
-    return base + state.timezoneOffsetMinutes * 60 * 1000;
-}
-
-function formatDateForTz(dateStr) {
-    const ms = getMsInTz(dateStr);
-    return new Date(ms).toISOString().slice(0, 10);
 }
 
 async function loadTimezoneSetting() {

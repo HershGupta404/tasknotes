@@ -18,6 +18,32 @@ function debounce(fn, delay) {
     };
 }
 
+function formatOffsetLabel(minutes) {
+    const sign = minutes >= 0 ? '+' : '-';
+    const abs = Math.abs(minutes);
+    const hours = Math.floor(abs / 60).toString().padStart(2, '0');
+    const mins = (abs % 60).toString().padStart(2, '0');
+    return `UTC${sign}${hours}:${mins}`;
+}
+
+function getNowMsInTz(offsetMinutes) {
+    return Date.now() + offsetMinutes * 60 * 1000;
+}
+
+function getMsInTz(dateStr, offsetMinutes) {
+    const base = new Date(dateStr).getTime();
+    return base + offsetMinutes * 60 * 1000;
+}
+
+function formatDateForTz(dateStr, offsetMinutes) {
+    const ms = getMsInTz(dateStr, offsetMinutes);
+    return new Date(ms).toISOString().slice(0, 10);
+}
+
+function getPriorityLabel(priority) {
+    return CONSTANTS.PRIORITY_LABELS[priority] || 'Unknown';
+}
+
 function getPriorityLabel(priority) {
     const labels = {
         1: '🔴 P1 (Urgent)',

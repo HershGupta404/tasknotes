@@ -4,9 +4,11 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
+const constantsJsPath = path.join(__dirname, '..', 'frontend', 'static', 'js', 'constants.js');
 const utilsJsPath = path.join(__dirname, '..', 'frontend', 'static', 'js', 'utils.js');
 const apiJsPath = path.join(__dirname, '..', 'frontend', 'static', 'js', 'api.js');
 const appJsPath = path.join(__dirname, '..', 'frontend', 'static', 'js', 'app.js');
+const constantsCode = fs.readFileSync(constantsJsPath, 'utf8');
 const utilsCode = fs.readFileSync(utilsJsPath, 'utf8');
 const apiCode = fs.readFileSync(apiJsPath, 'utf8');
 const appCode = fs.readFileSync(appJsPath, 'utf8');
@@ -45,6 +47,7 @@ const context = {
 };
 
 vm.createContext(context);
+vm.runInContext(constantsCode, context);
 vm.runInContext(utilsCode, context);
 vm.runInContext(apiCode, context);
 vm.runInContext(appCode, context);
