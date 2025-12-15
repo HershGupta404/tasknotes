@@ -44,6 +44,11 @@ function getPriorityLabel(priority) {
     return CONSTANTS.PRIORITY_LABELS[priority] || 'Unknown';
 }
 
+function formatDateTimeForDisplay(dateStr, offsetMinutes) {
+    const ms = getMsInTz(dateStr, offsetMinutes);
+    return new Date(ms).toLocaleString();
+}
+
 function getPriorityLabel(priority) {
     const labels = {
         1: '🔴 P1 (Urgent)',

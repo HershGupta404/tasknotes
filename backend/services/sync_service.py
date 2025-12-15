@@ -22,6 +22,11 @@ def node_to_markdown(node: Node) -> str:
         "position": node.position,
         "created_at": node.created_at.isoformat() if node.created_at else None,
         "updated_at": node.updated_at.isoformat() if node.updated_at else None,
+        "started_at": node.started_at.isoformat() if node.started_at else None,
+        "completed_at": node.completed_at.isoformat() if node.completed_at else None,
+        "estimated_minutes": node.estimated_minutes,
+        "actual_minutes": node.actual_minutes,
+        "difficulty": node.difficulty,
     }
     
     if node.due_date:
@@ -46,6 +51,11 @@ def markdown_to_node_data(filepath: Path) -> Optional[dict]:
             "parent_id": post.get("parent_id"),
             "position": post.get("position", 0),
             "md_filename": filepath.name,
+            "started_at": post.get("started_at"),
+            "completed_at": post.get("completed_at"),
+            "estimated_minutes": post.get("estimated_minutes", 0),
+            "actual_minutes": post.get("actual_minutes", 0),
+            "difficulty": post.get("difficulty", 3),
         }
         
         # Parse dates
@@ -62,6 +72,20 @@ def markdown_to_node_data(filepath: Path) -> Optional[dict]:
                 data["created_at"] = datetime.fromisoformat(created)
             elif isinstance(created, datetime):
                 data["created_at"] = created
+
+        if post.get("started_at"):
+            started = post["started_at"]
+            if isinstance(started, str):
+                data["started_at"] = datetime.fromisoformat(started)
+            elif isinstance(started, datetime):
+                data["started_at"] = started
+
+        if post.get("completed_at"):
+            comp = post["completed_at"]
+            if isinstance(comp, str):
+                data["completed_at"] = datetime.fromisoformat(comp)
+            elif isinstance(comp, datetime):
+                data["completed_at"] = comp
         
         return data
     except Exception as e:

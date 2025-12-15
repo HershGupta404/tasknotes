@@ -32,3 +32,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_additional_columns():
+    """Ensure newly added columns exist in the nodes table (SQLite)."""
+    desired = {
+        "started_at": "DATETIME",
+        "completed_at": "DATETIME",
+        "estimated_minutes": "INTEGER DEFAULT 0",
+        "actual_minutes": "INTEGER DEFAULT 0",
+        "difficulty": "INTEGER DEFAULT 3",
+    }
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
+        for col, ddl in desired.items():
+            if col not in existing:
+                conn.execute(f"ALTER TABLE nodes ADD COLUMN {col} {ddl}")

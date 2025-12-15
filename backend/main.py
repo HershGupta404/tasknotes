@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 
-from .database import engine, Base, SessionLocal, NODES_DIR
+from .database import engine, Base, SessionLocal, NODES_DIR, ensure_additional_columns
 from .routers import nodes
 from .services.sync_service import sync_from_files
 from .services.priority_service import update_all_priorities
@@ -31,6 +31,7 @@ app.include_router(nodes.router)
 @app.on_event("startup")
 async def startup_event():
     """Sync from markdown files on startup."""
+    ensure_additional_columns()
     db = SessionLocal()
     try:
         # Check if there are any markdown files to sync

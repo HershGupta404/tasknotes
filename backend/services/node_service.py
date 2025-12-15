@@ -116,7 +116,12 @@ def create_node(db: Session, node_data: NodeCreate) -> Node:
         due_date=node_data.due_date,
         tags=node_data.tags or [],
         parent_id=node_data.parent_id,
-        position=max_pos + 1
+        position=max_pos + 1,
+        started_at=node_data.started_at,
+        completed_at=node_data.completed_at,
+        estimated_minutes=node_data.estimated_minutes,
+        actual_minutes=node_data.actual_minutes,
+        difficulty=node_data.difficulty,
     )
 
     # Ensure chore tasks have a due date today
@@ -152,8 +157,12 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     for field, value in update_data.items():
         setattr(node, field, value)
 
+    # Auto-set completion timestamp when moving to done
+    if 'status' in update_data and update_data['status'] == 'done' and not node.completed_at:
+        node.completed_at = datetime.now(get_timezone())
+
     ensure_chore_due_date(node)
-    
+
     db.commit()
     db.refresh(node)
 

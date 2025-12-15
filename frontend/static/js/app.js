@@ -184,6 +184,25 @@ async function renderDetailPanel(node) {
                         <div style="color: var(--text-secondary); font-weight: 500;">Due Date:</div>
                         <div>${renderDueBadge(node.due_date)}</div>
                     ` : ''}
+
+                    <div style="color: var(--text-secondary); font-weight: 500;">Estimated:</div>
+                    <div>${node.estimated_minutes || 0} min</div>
+
+                    <div style="color: var(--text-secondary); font-weight: 500;">Actual:</div>
+                    <div>${node.actual_minutes || 0} min</div>
+
+                    <div style="color: var(--text-secondary); font-weight: 500;">Difficulty:</div>
+                    <div>${node.difficulty || 0}/5</div>
+
+                    ${node.started_at ? `
+                        <div style="color: var(--text-secondary); font-weight: 500;">Started:</div>
+                        <div>${formatDateTimeForDisplay(node.started_at, state.timezoneOffsetMinutes)}</div>
+                    ` : ''}
+
+                    ${node.completed_at ? `
+                        <div style="color: var(--text-secondary); font-weight: 500;">Completed:</div>
+                        <div>${formatDateTimeForDisplay(node.completed_at, state.timezoneOffsetMinutes)}</div>
+                    ` : ''}
                 ` : ''}
 
                 ${node.tags && node.tags.length > 0 ? `

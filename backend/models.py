@@ -39,6 +39,13 @@ class Node(Base):
     # Computed fields (updated by propagation logic)
     computed_priority = Column(Float, default=0.0)
     computed_due = Column(DateTime, nullable=True)  # Inherited/propagated due date
+
+    # Timing and estimation
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    estimated_minutes = Column(Integer, default=0)
+    actual_minutes = Column(Integer, default=0)
+    difficulty = Column(Integer, default=3)  # 1 (easiest) - 5 (hardest)
     
     # Hierarchy (for subtasks)
     parent_id = Column(String(36), ForeignKey("nodes.id"), nullable=True)

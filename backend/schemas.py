@@ -13,6 +13,11 @@ class NodeBase(BaseModel):
     due_date: Optional[datetime] = None
     tags: List[str] = Field(default_factory=list)
     parent_id: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    estimated_minutes: int = Field(default=0, ge=0)
+    actual_minutes: int = Field(default=0, ge=0)
+    difficulty: int = Field(default=3, ge=1, le=5)
 
 
 class NodeCreate(NodeBase):
@@ -29,6 +34,11 @@ class NodeUpdate(BaseModel):
     tags: Optional[List[str]] = None
     parent_id: Optional[str] = None
     position: Optional[int] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    estimated_minutes: Optional[int] = Field(None, ge=0)
+    actual_minutes: Optional[int] = Field(None, ge=0)
+    difficulty: Optional[int] = Field(None, ge=1, le=5)
 
 
 class NodeResponse(NodeBase):
