@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import NODES_DIR
 from ..models import Node
+from .due_date_service import ensure_chore_due_date
 
 
 def node_to_markdown(node: Node) -> str:
@@ -105,10 +106,12 @@ def sync_from_files(db: Session) -> dict:
             for key, value in data.items():
                 if key != "id" and value is not None:
                     setattr(existing, key, value)
+            ensure_chore_due_date(existing)
             stats["updated"] += 1
         else:
             # Create new node
             node = Node(**data)
+            ensure_chore_due_date(node)
             db.add(node)
             stats["created"] += 1
     

@@ -1,5 +1,5 @@
 """API routes for node operations."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -10,6 +10,11 @@ from ..schemas import (
 )
 from ..services import node_service
 from ..services.priority_service import update_all_priorities
+from ..timezone_service import (
+    get_timezone_offset_minutes,
+    set_timezone_offset_minutes,
+    get_timezone,
+)
 
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
 
@@ -57,12 +62,19 @@ def get_graph(db: Session = Depends(get_db)):
     from ..models import Node, NodeLink
     from datetime import datetime, timezone
 
+    ROOT_NODE_BASE_SIZE = 36
+    NOTE_NODE_SIZE = ROOT_NODE_BASE_SIZE / 3
+
     # Get all nodes
     all_nodes = db.query(Node).all()
 
     # Build nodes array with metadata for visualization
     nodes = []
     for node in all_nodes:
+        link_count = db.query(NodeLink).filter(
+            (NodeLink.source_id == node.id) | (NodeLink.target_id == node.id)
+        ).count()
+
         # Calculate node size
         if node.mode == 'task':
             # Size based on urgency (closer due date = larger)
@@ -82,11 +94,8 @@ def get_graph(db: Session = Depends(get_db)):
             else:
                 size = 12  # Default size for tasks without due date
         else:
-            # Size based on link count
-            link_count = db.query(NodeLink).filter(
-                (NodeLink.source_id == node.id) | (NodeLink.target_id == node.id)
-            ).count()
-            size = max(10, min(25, 10 + link_count * 2))
+            # All notes get a consistent size
+            size = NOTE_NODE_SIZE
 
         nodes.append({
             "id": node.id,
@@ -98,7 +107,10 @@ def get_graph(db: Session = Depends(get_db)):
             "due_date": node.due_date.isoformat() if node.due_date else None,
             "tags": node.tags or [],
             "size": size,
-            "is_root": node.parent_id is None and node.mode == 'task'
+            "is_root": node.parent_id is None and (
+                node.mode == 'task' or
+                (node.mode == 'note' and link_count == 0)
+            )
         })
 
     # Build edges array
@@ -138,6 +150,21 @@ def get_graph(db: Session = Depends(get_db)):
         "nodes": nodes,
         "edges": edges
     }
+
+
+@router.get("/timezone")
+def get_timezone_setting():
+    """Get current timezone offset in minutes from UTC."""
+    offset = get_timezone_offset_minutes()
+    return {"offset_minutes": offset}
+
+
+@router.post("/timezone")
+def set_timezone(offset_minutes: int = Body(..., embed=True), db: Session = Depends(get_db)):
+    """Set timezone offset (minutes from UTC) and refresh priorities/chores."""
+    set_timezone_offset_minutes(offset_minutes)
+    count = update_all_priorities(db)
+    return {"status": "ok", "offset_minutes": offset_minutes, "updated": count}
 
 
 @router.get("/search")

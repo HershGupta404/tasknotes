@@ -51,7 +51,7 @@
                     <span class="filter-chip" data-filter-type="priority" data-filter-value="2">🟠 P2</span>
                     <span class="filter-chip" data-filter-type="priority" data-filter-value="3">🟡 P3</span>
                     <span class="filter-chip" data-filter-type="priority" data-filter-value="4">🟢 P4</span>
-                    <span class="filter-chip" data-filter-type="priority" data-filter-value="5">⚪ P5</span>
+                    <span class="filter-chip" data-filter-type="priority" data-filter-value="5">🧹 Chore</span>
                 </div>
             </div>
 
@@ -88,6 +88,12 @@
                         <span>Show Completed Root Tasks</span>
                     </label>
                 </div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="timezone-select" style="font-weight: 600; color: var(--text-secondary); font-size: 0.9rem;">Timezone</label>
+                    <select id="timezone-select" style="width: 100%; margin-top: 6px;">
+                        <!-- options populated dynamically -->
+                    </select>
+                </div>
             </div>
             
             <!-- Quick Stats -->
@@ -109,6 +115,7 @@
                 <button class="view-btn active" data-view="tree">🌲 Tree View</button>
                 <button class="view-btn" data-view="page">📄 Page View</button>
                 <button class="view-btn" data-view="graph">🕸️ Graph View</button>
+                <button class="view-btn" data-view="priority">⭐ Priority View</button>
             </div>
 
             <!-- Tree View -->
@@ -155,6 +162,19 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Priority View -->
+            <div id="priority-view" class="view-container" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0;">Priority View (next 14 days)</h3>
+                    <button class="btn btn-ghost btn-sm" onclick="loadPriorityView()">↻ Refresh</button>
+                </div>
+                <div id="priority-view-content" class="priority-view-content">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
         </main>
         
         <!-- Detail Panel -->
@@ -188,7 +208,7 @@
                                 <option value="2">🟠 High</option>
                                 <option value="3" selected>🟡 Medium</option>
                                 <option value="4">🟢 Low</option>
-                                <option value="5">⚪ Someday</option>
+                                <option value="5">🧹 Chore (Daily)</option>
                             </select>
                         </div>
                         <div class="form-group">

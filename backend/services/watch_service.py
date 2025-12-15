@@ -1,0 +1,89 @@
+"""Watch markdown directory for new files and sync them into the database."""
+import asyncio
+from pathlib import Path
+from typing import Optional
+
+import frontmatter
+from watchfiles import awatch, Change
+
+from ..database import NODES_DIR, SessionLocal
+from ..models import generate_uuid
+from .sync_service import sync_from_files
+from .priority_service import update_all_priorities
+
+
+def _normalize_markdown_file(md_path: Path) -> Optional[Path]:
+    """
+    Ensure a markdown file has YAML frontmatter with an id and filename aligned to that id.
+    Returns the normalized path (within NODES_DIR) or None if skipped.
+    """
+    if md_path.suffix.lower() != ".md":
+        return None
+
+    if not md_path.exists():
+        return None
+
+    try:
+        raw = md_path.read_text(encoding="utf-8")
+        has_frontmatter = raw.lstrip().startswith("---")
+        post = frontmatter.loads(raw)
+    except Exception as exc:
+        print(f"[watch] Skipping {md_path}: unable to parse frontmatter ({exc})")
+        return None
+
+    if not has_frontmatter and not post.metadata:
+        print(f"[watch] Skipping {md_path}: missing YAML frontmatter")
+        return None
+
+    metadata = dict(post.metadata)
+    node_id = metadata.get("id") or generate_uuid()
+    metadata["id"] = node_id
+    metadata.setdefault("title", md_path.stem)
+
+    # Write normalized file with id-based filename
+    target_path = NODES_DIR / f"{node_id}.md"
+    content = frontmatter.dumps(frontmatter.Post(post.content, **metadata))
+
+    try:
+        target_path.write_text(content, encoding="utf-8")
+    except Exception as exc:
+        print(f"[watch] Failed to write normalized file for {md_path}: {exc}")
+        return None
+
+    if md_path.resolve() != target_path.resolve():
+        try:
+            md_path.unlink(missing_ok=True)
+        except TypeError:
+            # missing_ok not available in older runtimes
+            if md_path.exists():
+                md_path.unlink()
+
+    return target_path
+
+
+async def watch_markdown_directory(stop_event: asyncio.Event):
+    """Watch the nodes directory for newly added markdown files and sync them."""
+    print(f"[watch] Watching for new markdown files in {NODES_DIR}")
+    async for changes in awatch(NODES_DIR, stop_event=stop_event):
+        added = [Path(path) for change, path in changes if change == Change.added]
+        if not added:
+            continue
+
+        normalized_any = False
+        for md_path in added:
+            normalized_path = _normalize_markdown_file(md_path)
+            if normalized_path:
+                normalized_any = True
+
+        if not normalized_any:
+            continue
+
+        db = SessionLocal()
+        try:
+            stats = sync_from_files(db)
+            update_all_priorities(db)
+            print(f"[watch] Synced new files: {stats}")
+        except Exception as exc:
+            print(f"[watch] Sync failed: {exc}")
+        finally:
+            db.close()

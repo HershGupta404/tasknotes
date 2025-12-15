@@ -12,7 +12,7 @@ const state = {
     filters: {
         mode: null,
         status: null,
-        priority: null,
+        priority: [],
         tags: [],
         dateFrom: null,
         dateTo: null,
@@ -22,9 +22,10 @@ const state = {
     },
     createModalTags: [],
     searchQuery: '',
-    currentView: 'tree', // 'tree' or 'page'
+    currentView: 'tree', // 'tree', 'page', 'graph', 'priority'
     openTabs: [],  // Array of {id, title, node}
     activeTab: null,
+    timezoneOffsetMinutes: 0,
     commandPalette: {
         isOpen: false,
         element: null,
@@ -178,11 +179,11 @@ function renderNode(node, depth = 0) {
 }
 
 function renderDueBadge(dueDateStr) {
-    const due = new Date(dueDateStr);
-    const now = new Date();
-    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    const dueMs = getMsInTz(dueDateStr);
+    const nowMs = getNowMsInTz();
+    const diffDays = Math.ceil((dueMs - nowMs) / (1000 * 60 * 60 * 24));
 
-    let label = due.toLocaleDateString();
+    let label = formatDateForTz(dueDateStr);
     let className = 'badge-due';
 
     if (diffDays < 0) {
@@ -205,7 +206,7 @@ function getPriorityLabel(priority) {
         2: '🟠 P2 (High)',
         3: '🟡 P3 (Medium)',
         4: '🟢 P4 (Low)',
-        5: '⚪ P5 (Someday)'
+        5: '🧹 Chore (Daily)'
     };
     return labels[priority] || 'Unknown';
 }
@@ -544,9 +545,12 @@ function matchesFiltersBase(node) {
     }
 
     // Priority filter - only applies to tasks, so hide notes if priority filter is active
-    if (state.filters.priority) {
+    if (state.filters.priority && state.filters.priority.length > 0) {
         if (node.mode !== 'task') return false;
-        if (node.priority !== parseInt(state.filters.priority)) return false;
+        if (!state.filters.priority.includes(node.priority.toString()) &&
+            !state.filters.priority.includes(node.priority)) {
+            return false;
+        }
     }
 
     // Date range filter - only applies to tasks with due dates
@@ -554,15 +558,15 @@ function matchesFiltersBase(node) {
         if (node.mode !== 'task') return false;
         if (!node.due_date) return false;
 
-        const dueDate = new Date(node.due_date);
+        const dueMs = getMsInTz(node.due_date);
         if (state.filters.dateFrom) {
-            const from = new Date(state.filters.dateFrom);
-            if (dueDate < from) return false;
+            const from = new Date(state.filters.dateFrom).getTime();
+            if (dueMs < from) return false;
         }
         if (state.filters.dateTo) {
             const to = new Date(state.filters.dateTo);
             to.setHours(23, 59, 59, 999);
-            if (dueDate > to) return false;
+            if (dueMs > to.getTime()) return false;
         }
     }
 
@@ -608,7 +612,12 @@ function matchesFilters(node) {
 
 function setFilter(type, value) {
     if (type === 'priority') {
-        state.filters.priority = state.filters.priority === value ? null : value;
+        const idx = state.filters.priority.indexOf(value);
+        if (idx >= 0) {
+            state.filters.priority.splice(idx, 1);
+        } else {
+            state.filters.priority.push(value);
+        }
     } else {
         state.filters[type] = state.filters[type] === value ? null : value;
     }
@@ -626,7 +635,7 @@ function updateFilterUI() {
 
         // For priority, compare as integer
         if (filterType === 'priority') {
-            chip.classList.toggle('active', state.filters[filterType] === filterValue);
+            chip.classList.toggle('active', state.filters[filterType].includes(filterValue));
         } else {
             chip.classList.toggle('active', state.filters[filterType] === filterValue);
         }
@@ -650,6 +659,10 @@ function switchView(viewName) {
     // Load graph if switching to graph view
     if (viewName === 'graph') {
         loadGraph();
+    }
+
+    if (viewName === 'priority') {
+        loadPriorityView();
     }
 }
 
@@ -937,6 +950,76 @@ async function loadGraph() {
     }
 }
 
+// Priority View Functions
+async function loadPriorityView() {
+    const container = document.getElementById('priority-view-content');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    `;
+
+    try {
+        const res = await fetch(`${API_BASE}?parent_id=all&mode=task`);
+        const tasks = await res.json();
+        const nowMs = getNowMsInTz();
+        const horizonMs = nowMs + 14 * 24 * 60 * 60 * 1000;
+
+        const dueSoon = tasks.filter(t => {
+            if (!t.due_date) return false;
+            const dueMs = getMsInTz(t.due_date);
+            return dueMs <= horizonMs;
+        });
+
+        const sorted = dueSoon.sort((a, b) => (b.computed_priority || 0) - (a.computed_priority || 0));
+        const chores = sorted.filter(t => t.priority === 5);
+        const main = sorted.filter(t => t.priority !== 5);
+
+        const renderList = (items) => {
+            if (items.length === 0) {
+                return `<div class="empty-state"><p>No tasks in this bucket</p></div>`;
+            }
+            return items.map(t => `
+                <div class="priority-card" data-id="${t.id}">
+                    <div class="priority-card-header">
+                        <div class="priority-card-title">${escapeHtml(t.title)}</div>
+                        <div class="priority-card-score">${(t.computed_priority || 0).toFixed(1)}</div>
+                    </div>
+                    <div class="priority-card-meta">
+                        <span class="priority-card-label">${getPriorityLabel(t.priority)}</span>
+                        ${t.due_date ? renderDueBadge(t.due_date) : '<span class="node-badge badge-note">No due date</span>'}
+                        <span class="node-badge badge-${t.status}">${t.status}</span>
+                    </div>
+                </div>
+            `).join('');
+        };
+
+        container.innerHTML = `
+            <div class="priority-section">
+                <h4>Priority Tasks (P1-P4)</h4>
+                ${renderList(main)}
+            </div>
+            <div class="priority-section">
+                <h4>Chores (P5)</h4>
+                ${renderList(chores)}
+            </div>
+        `;
+
+        container.querySelectorAll('.priority-card').forEach(card => {
+            card.addEventListener('click', async () => {
+                const id = card.dataset.id;
+                state.selectedNode = await fetchNode(id);
+                renderDetailPanel(state.selectedNode);
+            });
+        });
+    } catch (error) {
+        console.error('Failed to load priority view:', error);
+        container.innerHTML = `<div class="empty-state"><p>Error loading priority view</p></div>`;
+    }
+}
+
 function applyGraphFilters(graphData) {
     // Get all nodes that match filters
     const matchedNodeIds = new Set();
@@ -1056,6 +1139,58 @@ function renderGraph(graphData) {
 
     const width = container.clientWidth;
     const height = container.clientHeight;
+    const totalNodes = graphData.nodes.length;
+
+    // Make sure root nodes stay visually dominant
+    const ROOT_NODE_BASE_SIZE = 36;
+    const NOTE_NODE_SIZE = ROOT_NODE_BASE_SIZE / 3;
+    graphData.nodes.forEach(node => {
+        if (node.mode === 'note') {
+            node.size = NOTE_NODE_SIZE;
+        }
+        if (node.is_root && node.mode === 'task') {
+            node.size = Math.max(node.size || 0, ROOT_NODE_BASE_SIZE);
+        }
+    });
+
+    // Precompute link counts for scaling forces
+    const linkCounts = new Map();
+    graphData.nodes.forEach(n => linkCounts.set(n.id, 0));
+    const getNodeId = (node) => typeof node === 'object' ? node.id : node;
+    graphData.edges.forEach(edge => {
+        const sourceId = getNodeId(edge.source);
+        const targetId = getNodeId(edge.target);
+        linkCounts.set(sourceId, (linkCounts.get(sourceId) || 0) + 1);
+        linkCounts.set(targetId, (linkCounts.get(targetId) || 0) + 1);
+    });
+
+    // Connected component sizes (undirected over all links)
+    const adjacency = new Map();
+    graphData.nodes.forEach(n => adjacency.set(n.id, new Set()));
+    graphData.edges.forEach(edge => {
+        const s = getNodeId(edge.source);
+        const t = getNodeId(edge.target);
+        adjacency.get(s)?.add(t);
+        adjacency.get(t)?.add(s);
+    });
+
+    const componentOf = new Map();
+    const componentSize = new Map();
+    graphData.nodes.forEach(node => {
+        if (componentOf.has(node.id)) return;
+        const queue = [node.id];
+        const members = [];
+        while (queue.length > 0) {
+            const current = queue.pop();
+            if (componentOf.has(current)) continue;
+            componentOf.set(current, node.id); // use root id as component key
+            members.push(current);
+            adjacency.get(current)?.forEach(nextId => {
+                if (!componentOf.has(nextId)) queue.push(nextId);
+            });
+        }
+        members.forEach(id => componentSize.set(id, members.length));
+    });
 
     // Create SVG
     const svg = d3.select('#graph-container')
@@ -1077,23 +1212,45 @@ function renderGraph(graphData) {
         .force('link', d3.forceLink(graphData.edges)
             .id(d => d.id)
             .distance(d => {
-                if (d.type === 'hierarchy') return 100;
-                if (d.type === 'dependency') return 150;
-                return 120;
+                const base = Math.max(
+                    ROOT_NODE_BASE_SIZE * 1.9,
+                    d.type === 'hierarchy' ? 70 : d.type === 'dependency' ? 115 : 105
+                );
+                const sourceLinks = linkCounts.get(getNodeId(d.source)) || 0;
+                const targetLinks = linkCounts.get(getNodeId(d.target)) || 0;
+                const maxLinks = Math.max(sourceLinks, targetLinks);
+                const componentSpan = Math.max(
+                    componentSize.get(getNodeId(d.source)) || 1,
+                    componentSize.get(getNodeId(d.target)) || 1
+                );
+                const degreeSpread = d.type === 'dependency'
+                    ? Math.min(1.8, 1 + (maxLinks / 10))
+                    : Math.min(2.0, 1.05 + (maxLinks / 7));
+                const componentSpread = Math.min(1.6, 1 + (componentSpan / 18));
+                return base * degreeSpread * componentSpread;
+            })
+            .strength(d => {
+                const componentSpan = Math.max(
+                    componentSize.get(getNodeId(d.source)) || 1,
+                    componentSize.get(getNodeId(d.target)) || 1
+                );
+                const compStrength = Math.min(1.25, 1 + (componentSpan / 120));
+                return 0.85 * compStrength;
             }))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(d => d.size + 10));
-
-    // Add extra force to center root tasks
-    const rootNodes = graphData.nodes.filter(n => n.is_root);
-    if (rootNodes.length > 0) {
-        simulation.force('root-center', d3.forceRadial(
-            0,
-            width / 2,
-            height / 2
-        ).strength(d => d.is_root ? 0.3 : 0));
-    }
+        .force('charge', d3.forceManyBody()
+            .strength(d => {
+                // Fewer links = softer repulsion; modest boost as graphs get larger
+                const linkCount = linkCounts.get(d.id) || 0;
+                const graphScale = Math.min(1.55, 1.05 + (totalNodes / 140));
+                const linkFactor = linkCount === 0 ? 0.6 : linkCount === 1 ? 0.95 : 1.15;
+                const sizeFactor = Math.max(0.5, (d.size || NOTE_NODE_SIZE) / ROOT_NODE_BASE_SIZE);
+                const componentSpan = componentSize.get(d.id) || 1;
+                const componentRepel = Math.min(1.25, 1 + (componentSpan / 80));
+                const noteIsolationFactor = (d.mode === 'note' && linkCount === 0) ? 0.35 : 1;
+                return -230 * graphScale * linkFactor * sizeFactor * componentRepel * noteIsolationFactor;
+            })
+            .distanceMax(210))
+        .force('collision', d3.forceCollide().radius(d => d.size + 18).iterations(2));
 
     // Create arrow markers for directed edges
     svg.append('defs').selectAll('marker')
@@ -1474,6 +1631,12 @@ function setupEventListeners() {
         });
     });
 
+    // Timezone selector
+    document.getElementById('timezone-select')?.addEventListener('change', (e) => {
+        const offset = parseInt(e.target.value, 10);
+        updateTimezone(offset);
+    });
+
     // Date filter inputs
     document.getElementById('filter-date-from')?.addEventListener('change', (e) => {
         state.filters.dateFrom = e.target.value || null;
@@ -1619,6 +1782,64 @@ function debounce(fn, delay) {
         clearTimeout(timeout);
         timeout = setTimeout(() => fn(...args), delay);
     };
+}
+
+function formatOffsetLabel(minutes) {
+    const sign = minutes >= 0 ? '+' : '-';
+    const abs = Math.abs(minutes);
+    const hours = Math.floor(abs / 60).toString().padStart(2, '0');
+    const mins = (abs % 60).toString().padStart(2, '0');
+    return `UTC${sign}${hours}:${mins}`;
+}
+
+function getNowMsInTz() {
+    return Date.now() + state.timezoneOffsetMinutes * 60 * 1000;
+}
+
+function getMsInTz(dateStr) {
+    const base = new Date(dateStr).getTime();
+    return base + state.timezoneOffsetMinutes * 60 * 1000;
+}
+
+function formatDateForTz(dateStr) {
+    const ms = getMsInTz(dateStr);
+    return new Date(ms).toISOString().slice(0, 10);
+}
+
+async function loadTimezoneSetting() {
+    try {
+        const res = await fetch('/api/nodes/timezone');
+        const data = await res.json();
+        state.timezoneOffsetMinutes = data.offset_minutes || 0;
+    } catch (e) {
+        console.error('Failed to load timezone', e);
+    }
+
+    // Populate select
+    const select = document.getElementById('timezone-select');
+    if (!select) return;
+    const options = [];
+    for (let offset = -720; offset <= 840; offset += 60) {
+        options.push(`<option value="${offset}">${formatOffsetLabel(offset)}</option>`);
+    }
+    select.innerHTML = options.join('');
+    select.value = state.timezoneOffsetMinutes.toString();
+}
+
+async function updateTimezone(offsetMinutes) {
+    try {
+        await fetch('/api/nodes/timezone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ offset_minutes: offsetMinutes })
+        });
+        state.timezoneOffsetMinutes = offsetMinutes;
+        await refreshAll();
+        if (state.currentView === 'graph') loadGraph();
+        if (state.currentView === 'priority') loadPriorityView();
+    } catch (e) {
+        console.error('Failed to update timezone', e);
+    }
 }
 
 // Tags management functions
@@ -1787,6 +2008,7 @@ async function refreshAll() {
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
+    await loadTimezoneSetting();
     await refreshAll();
 
     // Expand root nodes by default

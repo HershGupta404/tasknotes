@@ -7,6 +7,8 @@ from ..models import Node, NodeLink
 from ..schemas import NodeCreate, NodeUpdate, FilterParams
 from .sync_service import save_node_to_file
 from .priority_service import propagate_node_changes, compute_node_priority
+from .due_date_service import ensure_chore_due_date
+from ..timezone_service import get_timezone_offset_minutes
 from .link_parser import sync_wiki_links, get_backlinks
 
 
@@ -117,6 +119,9 @@ def create_node(db: Session, node_data: NodeCreate) -> Node:
         position=max_pos + 1
     )
 
+    # Ensure chore tasks have a due date today
+    ensure_chore_due_date(node)
+
     # Calculate initial priority
     node.computed_priority = compute_node_priority(node, 0)
 
@@ -146,6 +151,8 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     update_data = updates.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(node, field, value)
+
+    ensure_chore_due_date(node)
     
     db.commit()
     db.refresh(node)

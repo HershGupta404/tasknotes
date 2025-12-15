@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ..models import Node, NodeLink
+from ..timezone_service import get_timezone
+from .due_date_service import ensure_chore_due_date
 
 
 def calculate_urgency_score(due_date: Optional[datetime], now: Optional[datetime] = None) -> float:
@@ -16,13 +18,19 @@ def calculate_urgency_score(due_date: Optional[datetime], now: Optional[datetime
         return 0.0
 
     # Ensure both datetimes are timezone-aware for comparison
+    tz = get_timezone()
+
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(tz)
     elif now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=tz)
+    else:
+        now = now.astimezone(tz)
 
     if due_date.tzinfo is None:
-        due_date = due_date.replace(tzinfo=timezone.utc)
+        due_date = due_date.replace(tzinfo=tz)
+    else:
+        due_date = due_date.astimezone(tz)
 
     days_until = (due_date - now).days
     
@@ -148,6 +156,7 @@ def update_all_priorities(db: Session) -> int:
         nodes = db.query(Node).filter(Node.parent_id == parent_id).all()
         
         for node in nodes:
+            ensure_chore_due_date(node)
             old_priority = node.computed_priority
             node.computed_priority = compute_node_priority(node, depth)
             if node.computed_priority != old_priority:

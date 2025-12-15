@@ -1138,6 +1138,70 @@ select.status-cancelled { border-left: 3px solid var(--priority-5); }
     text-anchor: middle;
 }
 
+/* Priority View */
+.priority-view-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.priority-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.priority-section h4 {
+    margin: 0 0 8px 0;
+}
+
+.priority-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.priority-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.priority-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.priority-card-title {
+    font-weight: 600;
+}
+
+.priority-card-score {
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.priority-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.priority-card-label {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+}
+
 @media (max-width: 768px) {
     .app-container {
         grid-template-columns: 1fr;

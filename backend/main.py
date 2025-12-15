@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -9,6 +10,7 @@ from .database import engine, Base, SessionLocal, NODES_DIR
 from .routers import nodes
 from .services.sync_service import sync_from_files
 from .services.priority_service import update_all_priorities
+from .services.watch_service import watch_markdown_directory
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -43,6 +45,12 @@ async def startup_event():
     finally:
         db.close()
 
+    # Start background watcher for new markdown files
+    app.state.watch_stop_event = asyncio.Event()
+    app.state.watch_task = asyncio.create_task(
+        watch_markdown_directory(app.state.watch_stop_event)
+    )
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -60,6 +68,17 @@ async def manual_sync():
         return {"status": "ok", "stats": stats}
     finally:
         db.close()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the markdown watcher."""
+    stop_event = getattr(app.state, "watch_stop_event", None)
+    task = getattr(app.state, "watch_task", None)
+    if stop_event:
+        stop_event.set()
+    if task:
+        await task
 
 
 @app.get("/health")

@@ -1,9 +1,54 @@
 """Service for managing due date inheritance and propagation."""
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..models import Node, NodeLink
+from ..timezone_service import get_timezone
+
+END_OF_DAY_HOUR = 23
+END_OF_DAY_MINUTE = 59
+
+
+def ensure_chore_due_date(node: Node, now: Optional[datetime] = None) -> bool:
+    """
+    Ensure priority-5 "chore" tasks always have a due date at end of current day.
+    Returns True if the due date was modified.
+    """
+    if node.mode != "task" or node.priority != 5:
+        return False
+
+    tz = get_timezone()
+    if now is None:
+        now = datetime.now(tz)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=tz)
+    else:
+        now = now.astimezone(tz)
+
+    target = datetime(
+        now.year,
+        now.month,
+        now.day,
+        END_OF_DAY_HOUR,
+        END_OF_DAY_MINUTE,
+        tzinfo=tz
+    )
+
+    # Normalize existing due date into configured tz for comparison
+    existing_due = None
+    if node.due_date:
+        existing_due = node.due_date
+        if existing_due.tzinfo is None:
+            existing_due = existing_due.replace(tzinfo=tz)
+        else:
+            existing_due = existing_due.astimezone(tz)
+
+    # If missing due date or not aligned to today, set it
+    if (not existing_due) or (existing_due.date() != target.date()):
+        node.due_date = target
+        return True
+    return False
 
 
 def propagate_subtask_due_dates(db: Session, node: Node) -> None:
@@ -27,9 +72,9 @@ def propagate_subtask_due_dates(db: Session, node: Node) -> None:
 
             # If subtask due date is later than parent, update parent
             elif node.due_date and parent.due_date:
-                # Ensure both are timezone-aware
-                node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
-                parent_due = parent.due_date if parent.due_date.tzinfo else parent.due_date.replace(tzinfo=timezone.utc)
+                tz = get_timezone()
+                node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
+                parent_due = parent.due_date if parent.due_date.tzinfo else parent.due_date.replace(tzinfo=tz)
 
                 if node_due > parent_due:
                     parent.due_date = node_due
@@ -55,8 +100,9 @@ def propagate_subtask_due_dates(db: Session, node: Node) -> None:
 
             # If child due date is later than parent, update parent
             elif child.due_date and node.due_date:
-                child_due = child.due_date if child.due_date.tzinfo else child.due_date.replace(tzinfo=timezone.utc)
-                node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
+                tz = get_timezone()
+                child_due = child.due_date if child.due_date.tzinfo else child.due_date.replace(tzinfo=tz)
+                node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
 
                 if child_due > node_due:
                     node.due_date = child_due
@@ -88,14 +134,16 @@ def propagate_dependency_due_dates(db: Session, node: Node) -> None:
 
         # If dependent task has no due date, set it to preceding + 2 hours
         if not node.due_date and preceding_task.due_date:
-            prec_due = preceding_task.due_date if preceding_task.due_date.tzinfo else preceding_task.due_date.replace(tzinfo=timezone.utc)
+            tz = get_timezone()
+            prec_due = preceding_task.due_date if preceding_task.due_date.tzinfo else preceding_task.due_date.replace(tzinfo=tz)
             node.due_date = prec_due + MIN_GAP
             db.flush()
 
         # If dependent task due date is before preceding + 2 hours, update preceding
         elif node.due_date and preceding_task.due_date:
-            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
-            prec_due = preceding_task.due_date if preceding_task.due_date.tzinfo else preceding_task.due_date.replace(tzinfo=timezone.utc)
+            tz = get_timezone()
+            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
+            prec_due = preceding_task.due_date if preceding_task.due_date.tzinfo else preceding_task.due_date.replace(tzinfo=tz)
 
             if node_due < prec_due + MIN_GAP:
                 # Set preceding task to be 2 hours before dependent task
@@ -106,7 +154,8 @@ def propagate_dependency_due_dates(db: Session, node: Node) -> None:
 
         # If only dependent has due date, set preceding to 2 hours before
         elif node.due_date and not preceding_task.due_date:
-            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
+            tz = get_timezone()
+            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
             preceding_task.due_date = node_due - MIN_GAP
             db.flush()
 
@@ -123,14 +172,16 @@ def propagate_dependency_due_dates(db: Session, node: Node) -> None:
 
         # If preceding task has due date but dependent doesn't, set dependent
         if node.due_date and not dependent_task.due_date:
-            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
+            tz = get_timezone()
+            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
             dependent_task.due_date = node_due + MIN_GAP
             db.flush()
 
         # If both have due dates, ensure minimum gap
         elif node.due_date and dependent_task.due_date:
-            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=timezone.utc)
-            dep_due = dependent_task.due_date if dependent_task.due_date.tzinfo else dependent_task.due_date.replace(tzinfo=timezone.utc)
+            tz = get_timezone()
+            node_due = node.due_date if node.due_date.tzinfo else node.due_date.replace(tzinfo=tz)
+            dep_due = dependent_task.due_date if dependent_task.due_date.tzinfo else dependent_task.due_date.replace(tzinfo=tz)
 
             if dep_due < node_due + MIN_GAP:
                 dependent_task.due_date = node_due + MIN_GAP
