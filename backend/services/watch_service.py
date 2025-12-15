@@ -1,5 +1,6 @@
 """Watch markdown directory for new files and sync them into the database."""
 import asyncio
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -64,16 +65,25 @@ def _normalize_markdown_file(md_path: Path) -> Optional[Path]:
 async def watch_markdown_directory(stop_event: asyncio.Event):
     """Watch the nodes directory for newly added markdown files and sync them."""
     print(f"[watch] Watching for new markdown files in {NODES_DIR}")
+    last_processed = {}
+    COOLDOWN = 1.5  # seconds
     async for changes in awatch(NODES_DIR, stop_event=stop_event):
-        added = [Path(path) for change, path in changes if change == Change.added]
-        if not added:
+        interesting = [
+            Path(path) for change, path in changes
+            if change in (Change.added, Change.modified) and path.endswith(".md")
+        ]
+        if not interesting:
             continue
 
         normalized_any = False
-        for md_path in added:
+        now = time.monotonic()
+        for md_path in interesting:
+            if now - last_processed.get(md_path, 0) < COOLDOWN:
+                continue
             normalized_path = _normalize_markdown_file(md_path)
             if normalized_path:
                 normalized_any = True
+                last_processed[md_path] = now
 
         if not normalized_any:
             continue

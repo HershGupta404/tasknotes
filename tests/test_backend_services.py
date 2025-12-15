@@ -398,6 +398,14 @@ Content
         node_service.delete_node(self.db, root.id, recursive=True)
         self.assertIsNone(node_service.get_node(self.db, child.id))
 
+    def test_mark_children_done_when_parent_done(self):
+        parent = node_service.create_node(self.db, NodeCreate(title="P", mode="task"))
+        child = node_service.create_node(self.db, NodeCreate(title="C", mode="task", parent_id=parent.id))
+        node_service.update_node(self.db, parent.id, NodeUpdate(status="done"))
+        refreshed_child = node_service.get_node(self.db, child.id)
+        self.assertEqual(refreshed_child.status, "done")
+        self.assertIsNotNone(refreshed_child.completed_at)
+
 
 if __name__ == "__main__":
     unittest.main()

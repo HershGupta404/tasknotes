@@ -1,5 +1,6 @@
 """Node CRUD service."""
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
@@ -10,7 +11,7 @@ from .sync_service import save_node_to_file
 from .priority_service import propagate_node_changes, compute_node_priority
 from .due_date_service import ensure_chore_due_date
 from .event_service import log_status_change
-from ..timezone_service import get_timezone_offset_minutes
+from ..timezone_service import get_timezone_offset_minutes, get_timezone
 from .link_parser import sync_wiki_links, get_backlinks
 
 
@@ -177,6 +178,15 @@ def update_node(db: Session, node_id: str, updates: NodeUpdate) -> Optional[Node
     # Log status change
     if 'status' in update_data and update_data['status'] != previous_status:
         log_status_change(db, node.id, previous_status, update_data['status'])
+        if update_data['status'] == 'done':
+            # Mark descendants as done
+            def mark_children_done(parent_id: str):
+                kids = get_children(db, parent_id)
+                for k in kids:
+                    k.status = 'done'
+                    k.completed_at = datetime.now(get_timezone())
+                    mark_children_done(k.id)
+            mark_children_done(node.id)
 
     # Propagate and save
     propagate_node_changes(db, node)

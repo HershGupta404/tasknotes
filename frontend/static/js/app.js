@@ -84,6 +84,11 @@ function renderNode(node, depth = 0) {
                 <div class="node-meta">
                     ${node.mode === 'note' ? '<span class="node-badge badge-note">Note</span>' : ''}
                     ${node.due_date ? renderDueBadge(node.due_date) : ''}
+                    ${node.tags && node.tags.length > 0 ? `
+                        <span class="tags-inline" style="display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+                            ${node.tags.map(tag => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join('')}
+                        </span>
+                    ` : ''}
                     ${hasChildren ? `<span>${node.children.length} subtask${node.children.length > 1 ? 's' : ''}</span>` : ''}
                 </div>
             </div>
@@ -146,6 +151,16 @@ async function renderDetailPanel(node) {
 
     // Render markdown content
     const contentRendered = renderMarkdown(node.content);
+    const tagsRow = (node.tags && node.tags.length > 0) ? `
+        <div style="color: var(--text-secondary); font-weight: 500;">Tags:</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            ${node.tags.map(tag => `
+                <span class="tag-chip" style="cursor: default;">
+                    ${escapeHtml(tag)}
+                </span>
+            `).join('')}
+        </div>
+    ` : '';
 
     panel.innerHTML = `
         <div class="detail-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -185,6 +200,8 @@ async function renderDetailPanel(node) {
                         <div>${renderDueBadge(node.due_date)}</div>
                     ` : ''}
 
+                    ${tagsRow}
+
                     <div style="color: var(--text-secondary); font-weight: 500;">Estimated:</div>
                     <div>${node.estimated_minutes || 0} min</div>
 
@@ -203,18 +220,7 @@ async function renderDetailPanel(node) {
                         <div style="color: var(--text-secondary); font-weight: 500;">Completed:</div>
                         <div>${formatDateTimeForDisplay(node.completed_at, state.timezoneOffsetMinutes)}</div>
                     ` : ''}
-                ` : ''}
-
-                ${node.tags && node.tags.length > 0 ? `
-                    <div style="color: var(--text-secondary); font-weight: 500;">Tags:</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                        ${node.tags.map(tag => `
-                            <span class="tag-chip" style="cursor: default;">
-                                ${escapeHtml(tag)}
-                            </span>
-                        `).join('')}
-                    </div>
-                ` : ''}
+                ` : `${tagsRow}`}
             </div>
         </div>
 
