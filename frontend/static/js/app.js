@@ -7,6 +7,7 @@ const state = {
     nodes: [],
     selectedNode: null,
     expandedNodes: new Set(),
+    notesExpanded: false,
     filters: {
         mode: null,
         status: null,
@@ -33,10 +34,35 @@ const state = {
 };
 
 // Render Functions
+function getNodeSortTime(node) {
+    const dateStr = node.due_date || node.computed_due || node.created_at;
+    if (!dateStr) return Number.POSITIVE_INFINITY;
+    const t = Date.parse(dateStr);
+    return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
+
+function sortNodesByDate(nodes) {
+    return [...nodes].sort((a, b) => {
+        const ta = getNodeSortTime(a);
+        const tb = getNodeSortTime(b);
+        if (ta !== tb) return ta - tb;
+        return (a.title || '').localeCompare(b.title || '');
+    });
+}
+
+function deepSortTree(node) {
+    const sortedChildren = node.children ? sortNodesByDate(node.children).map(deepSortTree) : [];
+    return { ...node, children: sortedChildren };
+}
+
 function renderTree(nodes, container) {
     container.innerHTML = '';
     
-    if (nodes.length === 0) {
+    const tasks = nodes.filter(n => n.mode === 'task');
+    const notes = nodes.filter(n => n.mode === 'note');
+    const visibleNotes = notes.filter(n => matchesFilters(n));
+
+    if (tasks.length === 0 && notes.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
                 <h3>No tasks yet</h3>
@@ -46,10 +72,16 @@ function renderTree(nodes, container) {
         return;
     }
     
-    nodes.forEach(node => {
+    const sortedTasks = sortNodesByDate(tasks).map(deepSortTree);
+    sortedTasks.forEach(node => {
         const nodeEl = renderNode(node);
         container.appendChild(nodeEl);
     });
+
+    if (visibleNotes.length > 0) {
+        const sortedNotes = sortNodesByDate(visibleNotes).map(deepSortTree);
+        container.appendChild(renderNotesRoot(sortedNotes));
+    }
 }
 
 function renderNode(node, depth = 0) {
@@ -100,13 +132,44 @@ function renderNode(node, depth = 0) {
     if (hasChildren && isExpanded) {
         const childContainer = document.createElement('div');
         childContainer.className = 'tree-children';
-        node.children.forEach(child => {
+        sortNodesByDate(node.children).forEach(child => {
             childContainer.appendChild(renderNode(child, depth + 1));
         });
         div.appendChild(childContainer);
     }
     
     return div;
+}
+
+function renderNotesRoot(notes) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node';
+    const count = notes.length;
+
+    wrapper.innerHTML = `
+        <div class="node-item ${state.notesExpanded ? 'selected' : ''}" data-id="notes-root">
+            <span class="node-toggle has-children" data-id="notes-root">
+                ${state.notesExpanded ? '▼' : '▶'}
+            </span>
+            <div class="node-content">
+                <div class="node-title">Notes</div>
+                <div class="node-meta">
+                    <span>${count} note${count === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    if (state.notesExpanded) {
+        const childContainer = document.createElement('div');
+        childContainer.className = 'tree-children';
+        sortNodesByDate(notes).forEach(note => {
+            childContainer.appendChild(renderNode(note));
+        });
+        wrapper.appendChild(childContainer);
+    }
+
+    return wrapper;
 }
 
 function renderDueBadge(dueDateStr) {
@@ -1700,6 +1763,11 @@ function setupEventListeners() {
         // Toggle expand
         if (e.target.classList.contains('node-toggle')) {
             const id = e.target.dataset.id;
+            if (id === 'notes-root') {
+                state.notesExpanded = !state.notesExpanded;
+                refreshTree();
+                return;
+            }
             if (state.expandedNodes.has(id)) {
                 state.expandedNodes.delete(id);
             } else {
