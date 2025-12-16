@@ -54,6 +54,12 @@ async function autocompleteNodes(query) {
     return res.json();
 }
 
+async function fetchAllTitles() {
+    const res = await fetch(`${API_BASE}?parent_id=all`);
+    const nodes = await res.json();
+    return nodes.map(n => n.title).filter(Boolean);
+}
+
 async function fetchDependencies(id) {
     const res = await fetch(`${API_BASE}/${id}/dependencies`);
     return res.json();

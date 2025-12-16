@@ -8,6 +8,12 @@ const state = {
     selectedNode: null,
     expandedNodes: new Set(),
     notesExpanded: false,
+    allNodeTitles: [],
+    wikiAutocomplete: {
+        isOpen: false,
+        items: [],
+        selectedIndex: 0
+    },
     filters: {
         mode: null,
         status: null,
@@ -53,6 +59,31 @@ function sortNodesByDate(nodes) {
 function deepSortTree(node) {
     const sortedChildren = node.children ? sortNodesByDate(node.children).map(deepSortTree) : [];
     return { ...node, children: sortedChildren };
+}
+
+function flattenNodes(nodes, acc = []) {
+    nodes.forEach(n => {
+        acc.push(n);
+        if (n.children && n.children.length > 0) {
+            flattenNodes(n.children, acc);
+        }
+    });
+    return acc;
+}
+
+function toDatetimeLocalValue(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function datetimeLocalToIso(value) {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
 }
 
 function renderTree(nodes, container) {
@@ -733,65 +764,92 @@ async function renderPageView() {
             // Fetch latest node data
             const node = await fetchNode(tab.id);
             tab.node = node;
+            const parentOptions = flattenNodes(state.nodes)
+                .filter(n => n.mode === 'task' && n.id !== node.id)
+                .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
             const backlinks = await fetchBacklinks(node.id);
             const contentPreview = renderWikiLinks(node.content || '');
 
             pageContent.innerHTML = `
                 <div class="page-editor">
-                    <input type="text" class="page-title-input" id="page-title" value="${escapeHtml(node.title)}" placeholder="Page title...">
+                    <div style="display: flex; align-items: center; gap: 12px; justify-content: space-between;">
+                        <input type="text" class="page-title-input" id="page-title" value="${escapeHtml(node.title)}" placeholder="Page title..." style="flex: 1;">
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-primary btn-sm" id="save-page-btn">💾 Save</button>
+                            <button class="btn btn-ghost btn-sm" id="delete-page-btn" style="color: var(--danger);">🗑 Delete</button>
+                        </div>
+                    </div>
 
                     <div class="page-metadata">
-                    <div class="page-metadata-item">
-                        <span>📝</span>
-                        <select id="page-mode" class="btn-ghost" style="padding: 4px 8px;">
-                            <option value="note" ${node.mode === 'note' ? 'selected' : ''}>Note</option>
-                            <option value="task" ${node.mode === 'task' ? 'selected' : ''}>Task</option>
-                        </select>
+                        <div class="page-metadata-row">
+                            <div class="page-metadata-item">
+                                <span>📝</span>
+                                <select id="page-mode" class="btn-ghost" style="padding: 4px 8px;">
+                                    <option value="note" ${node.mode === 'note' ? 'selected' : ''}>Note</option>
+                                    <option value="task" ${node.mode === 'task' ? 'selected' : ''}>Task</option>
+                                </select>
+                            </div>
+                            ${node.mode === 'task' ? `
+                            <div class="page-metadata-item">
+                                <span>📊</span>
+                                <select id="page-status" style="padding: 4px 8px;">
+                                    <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
+                                    <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                                    <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
+                                </select>
+                            </div>
+                            <div class="page-metadata-item">
+                                <span>🔥</span>
+                                <select id="page-priority" style="padding: 4px 8px;">
+                                    <option value="1" ${node.priority === 1 ? 'selected' : ''}>🔴 Urgent</option>
+                                    <option value="2" ${node.priority === 2 ? 'selected' : ''}>🟠 High</option>
+                                    <option value="3" ${node.priority === 3 ? 'selected' : ''}>🟡 Medium</option>
+                                    <option value="4" ${node.priority === 4 ? 'selected' : ''}>🟢 Low</option>
+                                    <option value="5" ${node.priority === 5 ? 'selected' : ''}>🧹 Chore (Daily)</option>
+                                </select>
+                            </div>
+                            <div class="page-metadata-item">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Due date</label>
+                                <input type="datetime-local" id="page-due" style="padding: 4px 6px; min-width: 190px;" value="${toDatetimeLocalValue(node.due_date || node.computed_due)}">
+                            </div>
+                            <div class="page-metadata-item">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Parent</label>
+                                <select id="page-parent" style="padding: 4px 8px; min-width: 180px;">
+                                    <option value="">(No parent)</option>
+                                    ${parentOptions.map(p => `
+                                        <option value="${p.id}" ${p.id === node.parent_id ? 'selected' : ''}>
+                                            ${escapeHtml(p.title)}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            ` : ''}
+                        </div>
+
+                        ${node.mode === 'task' ? `
+                        <div class="page-metadata-row">
+                            <div class="page-metadata-item">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Est. min</label>
+                                <input type="number" id="page-estimate" min="0" style="width: 110px; padding: 4px 6px;" value="${node.estimated_minutes || ''}">
+                            </div>
+                            <div class="page-metadata-item">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Actual min</label>
+                                <input type="number" id="page-actual" min="0" style="width: 110px; padding: 4px 6px;" value="${node.actual_minutes || ''}">
+                            </div>
+                            <div class="page-metadata-item">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Difficulty</label>
+                                <select id="page-difficulty" style="padding: 4px 8px;">
+                                    <option value="1" ${node.difficulty === 1 ? 'selected' : ''}>1</option>
+                                    <option value="2" ${node.difficulty === 2 ? 'selected' : ''}>2</option>
+                                    <option value="3" ${(!node.difficulty || node.difficulty === 3) ? 'selected' : ''}>3</option>
+                                    <option value="4" ${node.difficulty === 4 ? 'selected' : ''}>4</option>
+                                    <option value="5" ${node.difficulty === 5 ? 'selected' : ''}>5</option>
+                                </select>
+                            </div>
+                        </div>
+                        ` : ''}
                     </div>
-                    ${node.mode === 'task' ? `
-                    <div class="page-metadata-item">
-                        <span>📊</span>
-                        <select id="page-status" style="padding: 4px 8px;">
-                            <option value="todo" ${node.status === 'todo' ? 'selected' : ''}>To Do</option>
-                            <option value="in_progress" ${node.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-                            <option value="done" ${node.status === 'done' ? 'selected' : ''}>Done</option>
-                        </select>
-                    </div>
-                    <div class="page-metadata-item">
-                        <span>🔥</span>
-                        <select id="page-priority" style="padding: 4px 8px;">
-                            <option value="1" ${node.priority === 1 ? 'selected' : ''}>🔴 Urgent</option>
-                            <option value="2" ${node.priority === 2 ? 'selected' : ''}>🟠 High</option>
-                            <option value="3" ${node.priority === 3 ? 'selected' : ''}>🟡 Medium</option>
-                            <option value="4" ${node.priority === 4 ? 'selected' : ''}>🟢 Low</option>
-                            <option value="5" ${node.priority === 5 ? 'selected' : ''}>🧹 Chore (Daily)</option>
-                        </select>
-                    </div>
-                    <div class="page-metadata-item">
-                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Est. min</label>
-                        <input type="number" id="page-estimate" min="0" style="width: 90px; padding: 4px 6px;" value="${node.estimated_minutes || ''}">
-                    </div>
-                    <div class="page-metadata-item">
-                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Actual min</label>
-                        <input type="number" id="page-actual" min="0" style="width: 90px; padding: 4px 6px;" value="${node.actual_minutes || ''}">
-                    </div>
-                    <div class="page-metadata-item">
-                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Difficulty</label>
-                        <select id="page-difficulty" style="padding: 4px 8px;">
-                            <option value="1" ${node.difficulty === 1 ? 'selected' : ''}>1</option>
-                            <option value="2" ${node.difficulty === 2 ? 'selected' : ''}>2</option>
-                            <option value="3" ${(!node.difficulty || node.difficulty === 3) ? 'selected' : ''}>3</option>
-                            <option value="4" ${node.difficulty === 4 ? 'selected' : ''}>4</option>
-                            <option value="5" ${node.difficulty === 5 ? 'selected' : ''}>5</option>
-                        </select>
-                    </div>
-                    ` : ''}
-                    <div class="page-metadata-item">
-                        <button class="btn btn-primary btn-sm" id="save-page-btn">💾 Save</button>
-                        <button class="btn btn-ghost btn-sm" id="delete-page-btn" style="color: var(--danger);">🗑 Delete</button>
-                    </div>
-                </div>
 
                     <div class="form-group" style="margin-top: 16px;">
                         <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Tags</label>
@@ -872,6 +930,10 @@ async function renderPageView() {
                 if (node.mode === 'task') {
                     updates.status = document.getElementById('page-status')?.value;
                     updates.priority = parseInt(document.getElementById('page-priority')?.value);
+                    const dueVal = datetimeLocalToIso(document.getElementById('page-due')?.value);
+                    updates.due_date = dueVal;
+                    const parentVal = document.getElementById('page-parent')?.value || null;
+                    updates.parent_id = parentVal || null;
                     const estVal = parseInt(document.getElementById('page-estimate')?.value, 10);
                     if (!isNaN(estVal)) updates.estimated_minutes = estVal;
                     const actVal = parseInt(document.getElementById('page-actual')?.value, 10);
@@ -935,7 +997,94 @@ async function renderPageView() {
             // Setup command palette for page content editor
             const pageContentTextarea = document.getElementById('page-content-text');
             if (pageContentTextarea) {
+                const wikiBox = document.createElement('div');
+                wikiBox.id = 'wiki-autocomplete';
+                wikiBox.style.position = 'absolute';
+                wikiBox.style.background = 'var(--bg-primary)';
+                wikiBox.style.border = '1px solid var(--border)';
+                wikiBox.style.borderRadius = '6px';
+                wikiBox.style.boxShadow = '0 6px 20px rgba(0,0,0,0.15)';
+                wikiBox.style.zIndex = '999';
+                wikiBox.style.minWidth = '220px';
+                wikiBox.style.maxHeight = '240px';
+                wikiBox.style.overflowY = 'auto';
+                wikiBox.style.display = 'none';
+                pageContentTextarea.parentElement.appendChild(wikiBox);
+
+                const closeWikiBox = () => {
+                    state.wikiAutocomplete.isOpen = false;
+                    wikiBox.style.display = 'none';
+                };
+
+                const renderWikiBox = () => {
+                    const items = state.wikiAutocomplete.items || [];
+                    if (!state.wikiAutocomplete.isOpen || items.length === 0) {
+                        closeWikiBox();
+                        return;
+                    }
+                    wikiBox.innerHTML = items.map((t, idx) => `
+                        <div class="wiki-item ${idx === state.wikiAutocomplete.selectedIndex ? 'active' : ''}" 
+                             data-idx="${idx}" 
+                             style="padding: 6px 10px; cursor: pointer; ${idx === state.wikiAutocomplete.selectedIndex ? 'background: var(--bg-secondary);' : ''}">
+                             ${escapeHtml(t)}
+                        </div>
+                    `).join('');
+                    wikiBox.querySelectorAll('.wiki-item').forEach(el => {
+                        el.addEventListener('mousedown', (e) => {
+                            e.preventDefault();
+                            const idx = parseInt(el.dataset.idx, 10);
+                            commitWikiSelection(items[idx]);
+                        });
+                    });
+                    wikiBox.style.display = 'block';
+                    // Position under textarea
+                    const rect = pageContentTextarea.getBoundingClientRect();
+                    wikiBox.style.left = `${rect.left + 8 + window.scrollX}px`;
+                    wikiBox.style.top = `${rect.top + 8 + pageContentTextarea.clientHeight + window.scrollY}px`;
+                };
+
+                const commitWikiSelection = (title) => {
+                    if (!title) return;
+                    const start = pageContentTextarea.selectionStart;
+                    const before = pageContentTextarea.value.substring(0, start);
+                    const after = pageContentTextarea.value.substring(start);
+                    const lastOpen = before.lastIndexOf('[[');
+                    if (lastOpen === -1) {
+                        closeWikiBox();
+                        return;
+                    }
+                    const newText = before.substring(0, lastOpen) + `[[${title}]]` + after;
+                    const newCursor = lastOpen + title.length + 4;
+                    pageContentTextarea.value = newText;
+                    pageContentTextarea.focus();
+                    pageContentTextarea.setSelectionRange(newCursor, newCursor);
+                    closeWikiBox();
+                };
+
                 pageContentTextarea.addEventListener('keydown', (e) => {
+                    if (state.wikiAutocomplete.isOpen) {
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            const max = state.wikiAutocomplete.items.length - 1;
+                            state.wikiAutocomplete.selectedIndex = Math.min(max, state.wikiAutocomplete.selectedIndex + 1);
+                            renderWikiBox();
+                            return;
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            state.wikiAutocomplete.selectedIndex = Math.max(0, state.wikiAutocomplete.selectedIndex - 1);
+                            renderWikiBox();
+                            return;
+                        } else if (e.key === 'Enter' || e.key === 'Tab') {
+                            e.preventDefault();
+                            const item = state.wikiAutocomplete.items[state.wikiAutocomplete.selectedIndex];
+                            commitWikiSelection(item);
+                            return;
+                        } else if (e.key === 'Escape') {
+                            closeWikiBox();
+                            return;
+                        }
+                    }
+
                     if (e.key === '/' && pageContentTextarea.selectionStart === pageContentTextarea.value.length) {
                         // Only trigger if cursor is at the end or on a new line
                         const beforeCursor = pageContentTextarea.value.substring(0, pageContentTextarea.selectionStart);
@@ -963,6 +1112,39 @@ async function renderPageView() {
                             hideCommandPalette();
                         }
                     }
+                });
+
+                pageContentTextarea.addEventListener('keyup', (e) => {
+                    const cursor = pageContentTextarea.selectionStart;
+                    const before = pageContentTextarea.value.substring(0, cursor);
+                    const open = before.lastIndexOf('[[');
+                    const close = before.lastIndexOf(']]');
+                    if (open === -1 || (close !== -1 && close > open)) {
+                        closeWikiBox();
+                        return;
+                    }
+                    const fragment = before.substring(open + 2).trim();
+                    if (fragment.length === 0) {
+                        closeWikiBox();
+                        return;
+                    }
+                    const matches = (state.allNodeTitles || []).filter(t =>
+                        t.toLowerCase().includes(fragment.toLowerCase())
+                    ).slice(0, 8);
+                    if (matches.length === 0) {
+                        closeWikiBox();
+                        return;
+                    }
+                    state.wikiAutocomplete = {
+                        isOpen: true,
+                        items: matches,
+                        selectedIndex: 0
+                    };
+                    renderWikiBox();
+                });
+
+                pageContentTextarea.addEventListener('blur', () => {
+                    setTimeout(closeWikiBox, 150);
                 });
             }
         }
@@ -2003,6 +2185,8 @@ function renderWikiLinks(content) {
 async function refreshTree() {
     const tree = await fetchTree();
     state.nodes = tree;
+    // Cache titles for wiki autocomplete
+    fetchAllTitles().then(titles => state.allNodeTitles = titles).catch(() => {});
     renderTree(tree, document.getElementById('tree-container'));
     updateTagsAutocomplete();
 }
