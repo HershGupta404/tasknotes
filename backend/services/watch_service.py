@@ -37,11 +37,36 @@ def _normalize_markdown_file(md_path: Path) -> Optional[Path]:
         return None
 
     metadata = dict(post.metadata)
-    node_id = metadata.get("id") or generate_uuid()
+    node_id = metadata.get("id")
+
+    # If a manual file already has an id, keep it and avoid generating/rewriting a new file
+    if node_id:
+        metadata.setdefault("title", metadata.get("title", md_path.stem))
+        target_path = md_path
+        expected_name = f"{node_id}.md"
+        if md_path.name != expected_name:
+            target_path = NODES_DIR / expected_name
+            try:
+                md_path.rename(target_path)
+            except Exception as exc:
+                print(f"[watch] Failed to rename {md_path} to {expected_name}: {exc}")
+                return None
+
+        # Persist any metadata defaults without changing the id
+        try:
+            content = frontmatter.dumps(frontmatter.Post(post.content, **metadata))
+            target_path.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            print(f"[watch] Failed to normalize {target_path}: {exc}")
+            return None
+
+        return target_path
+
+    # No id present: generate one and normalize the filename
+    node_id = generate_uuid()
     metadata["id"] = node_id
     metadata.setdefault("title", md_path.stem)
 
-    # Write normalized file with id-based filename
     target_path = NODES_DIR / f"{node_id}.md"
     content = frontmatter.dumps(frontmatter.Post(post.content, **metadata))
 

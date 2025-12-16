@@ -5,7 +5,7 @@ from sqlalchemy import (
     Column, String, Text, Integer, Float, DateTime,
     ForeignKey, Boolean, Index, JSON
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from .database import Base
 
 
@@ -87,15 +87,23 @@ class NodeLink(Base):
     __tablename__ = "node_links"
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    source_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
-    target_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
+    source_id = Column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False)
     link_type = Column(String(50), default="reference")  # 'dependency' | 'blocks' | 'reference'
 
     created_at = Column(DateTime, default=utc_now)
     
     # Relationships
-    source = relationship("Node", foreign_keys=[source_id], backref="outgoing_links")
-    target = relationship("Node", foreign_keys=[target_id], backref="incoming_links")
+    source = relationship(
+        "Node",
+        foreign_keys=[source_id],
+        backref=backref("outgoing_links", passive_deletes=True)
+    )
+    target = relationship(
+        "Node",
+        foreign_keys=[target_id],
+        backref=backref("incoming_links", passive_deletes=True)
+    )
     
     __table_args__ = (
         Index("idx_link_source", "source_id"),
@@ -108,7 +116,7 @@ class Attachment(Base):
     __tablename__ = "attachments"
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    node_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
+    node_id = Column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)  # Relative to attachments dir
     filetype = Column(String(50))  # 'pdf' | 'image' | 'other'
@@ -130,7 +138,10 @@ class WorkSession(Base):
     note = Column(Text, default="")
     created_at = Column(DateTime, default=utc_now)
 
-    node = relationship("Node", backref="work_sessions")
+    node = relationship(
+        "Node",
+        backref=backref("work_sessions", passive_deletes=True)
+    )
 
     __table_args__ = (
         Index("idx_session_node", "node_id"),
@@ -143,12 +154,15 @@ class CompletionEvent(Base):
     __tablename__ = "completion_events"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    node_id = Column(String(36), ForeignKey("nodes.id"), nullable=False)
+    node_id = Column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False)
     from_status = Column(String(20))
     to_status = Column(String(20))
     occurred_at = Column(DateTime, default=utc_now)
 
-    node = relationship("Node", backref="completion_events")
+    node = relationship(
+        "Node",
+        backref=backref("completion_events", passive_deletes=True)
+    )
 
     __table_args__ = (
         Index("idx_event_node", "node_id"),

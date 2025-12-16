@@ -115,6 +115,16 @@ Updated body
         self.assertEqual(updated.title, "Updated Task")
         self.assertEqual(updated.priority, 4)
 
+    def test_sync_removes_nodes_missing_files(self):
+        node = node_service.create_node(self.db, NodeCreate(title="Orphan", mode="task"))
+        md_path = self.nodes_dir / f"{node.id}.md"
+        self.assertTrue(md_path.exists())
+        md_path.unlink()
+
+        stats = sync_service.sync_from_files(self.db)
+        self.assertEqual(stats["deleted"], 1)
+        self.assertIsNone(node_service.get_node(self.db, node.id))
+
     def test_create_update_delete_node_syncs_files(self):
         node_data = NodeCreate(title="New Task", mode="task")
         created = node_service.create_node(self.db, node_data)
@@ -397,6 +407,16 @@ Content
         child = node_service.create_node(self.db, NodeCreate(title="Child", mode="task", parent_id=root.id))
         node_service.delete_node(self.db, root.id, recursive=True)
         self.assertIsNone(node_service.get_node(self.db, child.id))
+
+    def test_delete_node_with_links_removes_links(self):
+        a = node_service.create_node(self.db, NodeCreate(title="A", mode="task"))
+        b = node_service.create_node(self.db, NodeCreate(title="B", mode="task"))
+        link = NodeLink(source_id=a.id, target_id=b.id, link_type="dependency")
+        self.db.add(link)
+        self.db.commit()
+        node_service.delete_node(self.db, b.id, recursive=True)
+        remaining_links = self.db.query(NodeLink).all()
+        self.assertEqual(len(remaining_links), 0)
 
     def test_mark_children_done_when_parent_done(self):
         parent = node_service.create_node(self.db, NodeCreate(title="P", mode="task"))

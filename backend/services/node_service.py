@@ -215,11 +215,11 @@ def delete_node(db: Session, node_id: str, recursive: bool = True) -> bool:
     # Delete links
     db.query(NodeLink).filter(
         or_(NodeLink.source_id == node_id, NodeLink.target_id == node_id)
-    ).delete()
+    ).delete(synchronize_session=False)
 
     # Delete sessions and events
-    db.query(WorkSession).filter(WorkSession.node_id == node_id).delete()
-    db.query(CompletionEvent).filter(CompletionEvent.node_id == node_id).delete()
+    db.query(WorkSession).filter(WorkSession.node_id == node_id).delete(synchronize_session=False)
+    db.query(CompletionEvent).filter(CompletionEvent.node_id == node_id).delete(synchronize_session=False)
     
     # Delete markdown file
     if node.md_filename:

@@ -6,7 +6,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..database import NODES_DIR
-from ..models import Node
+from ..models import Node, NodeLink
+from sqlalchemy import or_
 from .due_date_service import ensure_chore_due_date
 
 
@@ -110,8 +111,11 @@ def sync_from_files(db: Session) -> dict:
     Markdown files are source of truth.
     Returns stats about sync operation.
     """
-    stats = {"created": 0, "updated": 0, "errors": 0}
-    
+    stats = {"created": 0, "updated": 0, "errors": 0, "deleted": 0, "links_cleaned": 0}
+
+    existing_files = {p.name for p in NODES_DIR.glob("*.md")}
+    seen_ids = set()
+
     for md_file in NODES_DIR.glob("*.md"):
         data = markdown_to_node_data(md_file)
         if not data:
@@ -122,7 +126,8 @@ def sync_from_files(db: Session) -> dict:
         if not node_id:
             stats["errors"] += 1
             continue
-        
+        seen_ids.add(node_id)
+
         existing = db.query(Node).filter(Node.id == node_id).first()
         
         if existing:
@@ -140,6 +145,34 @@ def sync_from_files(db: Session) -> dict:
             stats["created"] += 1
     
     db.commit()
+
+    # Remove nodes whose backing markdown file is missing
+    nodes_to_delete = []
+    for node in db.query(Node).all():
+        expected_filename = (node.md_filename or f"{node.id}.md")
+        if expected_filename not in existing_files:
+            nodes_to_delete.append(node.id)
+
+    if nodes_to_delete:
+        from .node_service import delete_node  # Local import to avoid circular dependency
+        for node_id in nodes_to_delete:
+            if delete_node(db, node_id, recursive=True):
+                stats["deleted"] += 1
+
+    # Clean up any dangling links (null FKs or pointing to missing nodes)
+    valid_ids = {row[0] for row in db.query(Node.id).all()}
+    dangling = db.query(NodeLink).filter(
+        or_(
+            NodeLink.source_id.is_(None),
+            NodeLink.target_id.is_(None),
+            NodeLink.source_id.notin_(valid_ids),
+            NodeLink.target_id.notin_(valid_ids),
+        )
+    )
+    stats["links_cleaned"] = dangling.count()
+    dangling.delete(synchronize_session=False)
+    db.commit()
+
     return stats
 
 
